@@ -14,13 +14,13 @@
  * Text editing: double-click a text element to open the inline editor.
  */
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Layer, Stage } from "react-konva";
+import { Circle, Layer, Line, Rect, RegularPolygon, Stage } from "react-konva";
 import type Konva from "konva";
 import { useElementStore } from "../../features/elements/elementStore.ts";
 import { useCanvasStore } from "../../features/canvas/canvasStore.ts";
 import { useHistoryStore } from "../../features/history/historyStore.ts";
 import { renderShape } from "./KonvaShapes.tsx";
-import { clampScale, screenToCanvas } from "../../utils/geometry.ts";
+import { clampScale, screenToCanvas, triangleRadius } from "../../utils/geometry.ts";
 import type { Point } from "../../utils/geometry.ts";
 import {
   createShapeElement,
@@ -39,6 +39,7 @@ const DRAG_THRESHOLD = 4;
 interface DrawingState {
   startCanvas: Point;
   startScreen: Point;
+  currentCanvas: Point;
 }
 
 export default function CanvasViewport() {
@@ -131,7 +132,7 @@ export default function CanvasViewport() {
 
       if (isDrawingTool) {
         const canvasPos = screenToCanvas(pointer, position, scale);
-        setDrawing({ startCanvas: canvasPos, startScreen: pointer });
+        setDrawing({ startCanvas: canvasPos, startScreen: pointer, currentCanvas: canvasPos });
       } else {
         isPanning.current = true;
         lastPanPointer.current = pointer;
@@ -141,31 +142,36 @@ export default function CanvasViewport() {
   );
 
   /**
-   * Mousemove: update the stage position imperatively during a pan
-   * gesture for smooth 60fps movement (no React re-render per frame).
+   * Mousemove: update the stage position imperatively during a pan,
+   * or update the drawing preview bounds during shape creation.
    */
   const handleMouseMove = useCallback(
-    (e: Konva.KonvaEventObject<MouseEvent>) => {
-      if (!isPanning.current || !lastPanPointer.current) return;
-
+    (_e: Konva.KonvaEventObject<MouseEvent>) => {
       const stage = stageRef.current;
       if (!stage) return;
-
       const pointer = stage.getPointerPosition();
       if (!pointer) return;
 
-      const dx = pointer.x - lastPanPointer.current.x;
-      const dy = pointer.y - lastPanPointer.current.y;
+      if (isPanning.current && lastPanPointer.current) {
+        const dx = pointer.x - lastPanPointer.current.x;
+        const dy = pointer.y - lastPanPointer.current.y;
+        stage.position({
+          x: stage.x() + dx,
+          y: stage.y() + dy,
+        });
+        stage.batchDraw();
+        lastPanPointer.current = pointer;
+        return;
+      }
 
-      stage.position({
-        x: stage.x() + dx,
-        y: stage.y() + dy,
-      });
-      stage.batchDraw();
-
-      lastPanPointer.current = pointer;
+      if (drawing) {
+        const canvasPos = screenToCanvas(pointer, position, scale);
+        setDrawing((prev) =>
+          prev ? { ...prev, currentCanvas: canvasPos } : null,
+        );
+      }
     },
-    [],
+    [drawing, position, scale],
   );
 
   /**
@@ -311,6 +317,63 @@ export default function CanvasViewport() {
 
   const cursorStyle = isDrawingTool ? "crosshair" : "default";
 
+  const preview = useMemo(() => {
+    if (!drawing || !isDrawingTool) return null;
+    const { startCanvas, currentCanvas } = drawing;
+    const x = Math.min(startCanvas.x, currentCanvas.x);
+    const y = Math.min(startCanvas.y, currentCanvas.y);
+    const w = Math.abs(currentCanvas.x - startCanvas.x);
+    const h = Math.abs(currentCanvas.y - startCanvas.y);
+    if (w < 2 && h < 2) return null;
+
+    const shared = {
+      x,
+      y,
+      stroke: "#0D99FF",
+      strokeWidth: 1,
+      fill: "rgba(13,153,255,0.08)",
+      dash: [6, 3],
+      listening: false,
+    };
+
+    switch (selectedTool) {
+      case "rectangle":
+        return <Rect {...shared} width={w} height={h} />;
+      case "circle":
+        return (
+          <Circle
+            {...shared}
+            x={x + w / 2}
+            y={y + h / 2}
+            radius={Math.max(w, h) / 2}
+          />
+        );
+      case "line":
+        return (
+          <Line
+            {...shared}
+            points={[startCanvas.x, startCanvas.y, currentCanvas.x, currentCanvas.y]}
+            x={0}
+            y={0}
+          />
+        );
+      case "triangle":
+        return (
+          <RegularPolygon
+            {...shared}
+            x={x + w / 2}
+            y={y + h / 2}
+            sides={3}
+            radius={triangleRadius(w, h)}
+          />
+        );
+      case "text":
+        return <Rect {...shared} width={w} height={h} />;
+      default:
+        return null;
+    }
+  }, [drawing, isDrawingTool, selectedTool]);
+
   return (
     <>
       <Stage
@@ -342,6 +405,7 @@ export default function CanvasViewport() {
               editingTextId,
             ),
           )}
+          {preview}
           <SelectionOverlay shapeRefs={shapeRefs} />
           <LockOverlay currentUserId="local-user" />
         </Layer>
