@@ -1,13 +1,15 @@
+/**
+ * App shell — renders the canvas viewport with the drawing toolbar.
+ *
+ * Seeds demo elements for local development until the full auth →
+ * canvas load → API fetch flow is wired up (PR-12).
+ */
 import { useEffect } from "react";
 import CanvasViewport from "./components/canvas/CanvasViewport.tsx";
+import { Toolbar } from "./components/toolbar/Toolbar.tsx";
 import { useElementStore } from "./features/elements/elementStore.ts";
 import type { CanvasElement } from "./types/element.ts";
 
-/**
- * Seed a few demo shapes so the canvas isn't empty while we build
- * the creation tools (PR-08). This will be removed once the full
- * flow (auth → canvas load → API fetch) is wired up.
- */
 const demoElements: CanvasElement[] = [
   {
     id: "demo-rect",
@@ -98,7 +100,12 @@ function App() {
     setElements(demoElements);
   }, [setElements]);
 
-  return <CanvasViewport />;
+  return (
+    <>
+      <CanvasViewport />
+      <Toolbar />
+    </>
+  );
 }
 
 export default App;

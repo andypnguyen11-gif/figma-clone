@@ -1,32 +1,88 @@
 /**
- * CanvasViewport — the top-level react-konva Stage with pan and zoom.
+ * CanvasViewport — the top-level react-konva Stage with pan, zoom,
+ * shape creation, selection, drag/resize, and inline text editing.
  *
- * Pan: drag the stage background (not a shape) to move the viewport.
+ * Pan: click-drag on empty space to move the viewport (manual, not
+ *   Konva's built-in Stage.draggable, which can't distinguish shapes
+ *   from background).
  * Zoom: scroll wheel scales the stage around the pointer position.
- * Elements are read from the element store and rendered via KonvaShapes.
- * Selection is managed through the element store's selectedElementId.
+ * Creation: with a drawing tool active, click or click-drag to place
+ *   a new shape. After creation the tool reverts to "select" and the
+ *   new element is selected.
+ * Selection: click a shape in select mode to select it, gaining
+ *   move/resize via the Transformer overlay.
+ * Text editing: double-click a text element to open the inline editor.
  */
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Layer, Stage } from "react-konva";
 import type Konva from "konva";
 import { useElementStore } from "../../features/elements/elementStore.ts";
 import { useCanvasStore } from "../../features/canvas/canvasStore.ts";
+import { useHistoryStore } from "../../features/history/historyStore.ts";
 import { renderShape } from "./KonvaShapes.tsx";
-import { clampScale } from "../../utils/geometry.ts";
+import { clampScale, screenToCanvas } from "../../utils/geometry.ts";
+import type { Point } from "../../utils/geometry.ts";
+import {
+  createShapeElement,
+  createShapeFromDrag,
+} from "./interactionHandlers.ts";
+import SelectionOverlay from "./SelectionOverlay.tsx";
+import { InlineTextEditor } from "./InlineTextEditor.tsx";
+import { LockOverlay } from "../locking/LockOverlay.tsx";
 
 /** Zoom speed — higher = faster zoom per scroll tick. */
 const ZOOM_FACTOR = 1.1;
 
+/** Distance in px the mouse must move to be considered a drag (not a click). */
+const DRAG_THRESHOLD = 4;
+
+interface DrawingState {
+  startCanvas: Point;
+  startScreen: Point;
+}
+
 export default function CanvasViewport() {
   const stageRef = useRef<Konva.Stage>(null);
+  const shapeRefs = useRef<Map<string, Konva.Node>>(new Map());
   const [scale, setScale] = useState(1);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [position, setPosition] = useState<Point>({ x: 0, y: 0 });
+  const [drawing, setDrawing] = useState<DrawingState | null>(null);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+
+  /**
+   * Manual pan tracking. We don't use Stage.draggable because it
+   * captures drag events even when the pointer is over a shape,
+   * causing the entire canvas to pan when the user tries to
+   * click-select or drag an individual element.
+   */
+  const isPanning = useRef(false);
+  const lastPanPointer = useRef<Point | null>(null);
 
   const elementMap = useElementStore((s) => s.elements);
   const elements = useMemo(() => Array.from(elementMap.values()), [elementMap]);
   const selectedElementId = useElementStore((s) => s.selectedElementId);
   const setSelectedElementId = useElementStore((s) => s.setSelectedElementId);
+  const addElement = useElementStore((s) => s.addElement);
+  const updateElement = useElementStore((s) => s.updateElement);
+  const getAllElements = useElementStore((s) => s.getAllElements);
   const selectedTool = useCanvasStore((s) => s.selectedTool);
+  const setSelectedTool = useCanvasStore((s) => s.setSelectedTool);
+  const pushUndo = useHistoryStore((s) => s.pushUndo);
+  const canvasId = useCanvasStore((s) => s.canvas?.id) ?? "local";
+
+  const isDrawingTool = selectedTool !== "select";
+
+  /** Register / unregister a Konva node ref for a shape. */
+  const registerRef = useCallback(
+    (id: string, node: Konva.Node | null) => {
+      if (node) {
+        shapeRefs.current.set(id, node);
+      } else {
+        shapeRefs.current.delete(id);
+      }
+    },
+    [],
+  );
 
   /** Zoom towards the pointer position on scroll. */
   const handleWheel = useCallback(
@@ -58,19 +114,145 @@ export default function CanvasViewport() {
     [scale, position],
   );
 
-  /** Update viewport position after a drag. */
-  const handleDragEnd = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
-    setPosition({ x: e.target.x(), y: e.target.y() });
-  }, []);
-
-  /** Click on empty canvas area deselects the current element. */
-  const handleStageClick = useCallback(
+  /**
+   * Unified mousedown: routes to panning, shape creation, or does
+   * nothing (letting the shape's own click/drag handlers take over).
+   */
+  const handleMouseDown = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
-      if (e.target === stageRef.current) {
-        setSelectedElementId(null);
+      const stage = stageRef.current;
+      if (!stage) return;
+
+      const clickedOnEmpty = e.target === stage;
+      if (!clickedOnEmpty) return;
+
+      const pointer = stage.getPointerPosition();
+      if (!pointer) return;
+
+      if (isDrawingTool) {
+        const canvasPos = screenToCanvas(pointer, position, scale);
+        setDrawing({ startCanvas: canvasPos, startScreen: pointer });
+      } else {
+        isPanning.current = true;
+        lastPanPointer.current = pointer;
       }
     },
-    [setSelectedElementId],
+    [isDrawingTool, position, scale],
+  );
+
+  /**
+   * Mousemove: update the stage position imperatively during a pan
+   * gesture for smooth 60fps movement (no React re-render per frame).
+   */
+  const handleMouseMove = useCallback(
+    (e: Konva.KonvaEventObject<MouseEvent>) => {
+      if (!isPanning.current || !lastPanPointer.current) return;
+
+      const stage = stageRef.current;
+      if (!stage) return;
+
+      const pointer = stage.getPointerPosition();
+      if (!pointer) return;
+
+      const dx = pointer.x - lastPanPointer.current.x;
+      const dy = pointer.y - lastPanPointer.current.y;
+
+      stage.position({
+        x: stage.x() + dx,
+        y: stage.y() + dy,
+      });
+      stage.batchDraw();
+
+      lastPanPointer.current = pointer;
+    },
+    [],
+  );
+
+  /**
+   * Mouseup: finalise panning (commit position to state) or
+   * finalise shape creation.
+   */
+  const handleMouseUp = useCallback(
+    (e: Konva.KonvaEventObject<MouseEvent>) => {
+      /* ---------- end pan ---------- */
+      if (isPanning.current) {
+        isPanning.current = false;
+        lastPanPointer.current = null;
+        const stage = stageRef.current;
+        if (stage) {
+          setPosition({ x: stage.x(), y: stage.y() });
+        }
+        return;
+      }
+
+      /* ---------- end shape creation ---------- */
+      if (!drawing || !isDrawingTool) return;
+
+      const stage = stageRef.current;
+      if (!stage) return;
+      const pointer = stage.getPointerPosition();
+      if (!pointer) return;
+
+      const endCanvas = screenToCanvas(pointer, position, scale);
+
+      const dx = Math.abs(pointer.x - drawing.startScreen.x);
+      const dy = Math.abs(pointer.y - drawing.startScreen.y);
+      const wasDrag = dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD;
+
+      pushUndo(getAllElements());
+
+      let newElement;
+      if (wasDrag) {
+        newElement = createShapeFromDrag(
+          selectedTool as Exclude<typeof selectedTool, "select">,
+          drawing.startCanvas,
+          endCanvas,
+          canvasId,
+        );
+      } else {
+        newElement = createShapeElement(
+          selectedTool as Exclude<typeof selectedTool, "select">,
+          drawing.startCanvas,
+          canvasId,
+        );
+      }
+
+      addElement(newElement);
+      setSelectedElementId(newElement.id);
+      setSelectedTool("select");
+      setDrawing(null);
+
+      if (newElement.elementType === "text") {
+        setEditingTextId(newElement.id);
+      }
+
+      e.evt.preventDefault();
+    },
+    [
+      drawing,
+      isDrawingTool,
+      selectedTool,
+      position,
+      scale,
+      canvasId,
+      addElement,
+      setSelectedElementId,
+      setSelectedTool,
+      pushUndo,
+      getAllElements,
+    ],
+  );
+
+  /** Click/tap on empty canvas area deselects the current element. */
+  const handleStageClick = useCallback(
+    (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+      if (isDrawingTool) return;
+      if (e.target === stageRef.current) {
+        setSelectedElementId(null);
+        setEditingTextId(null);
+      }
+    },
+    [setSelectedElementId, isDrawingTool],
   );
 
   /** Select an element when clicked (only in select mode). */
@@ -78,39 +260,107 @@ export default function CanvasViewport() {
     (id: string) => {
       if (selectedTool === "select") {
         setSelectedElementId(id);
+        setEditingTextId(null);
       }
     },
     [selectedTool, setSelectedElementId],
   );
 
-  /** Sort elements by z-index so higher values render on top. */
+  /** Commit position change after dragging a shape. */
+  const handleElementDragEnd = useCallback(
+    (id: string, x: number, y: number) => {
+      pushUndo(getAllElements());
+      updateElement(id, { x, y });
+    },
+    [updateElement, pushUndo, getAllElements],
+  );
+
+  /** Open inline text editor on double-click. */
+  const handleElementDblClick = useCallback(
+    (id: string) => {
+      const el = useElementStore.getState().getElement(id);
+      if (el?.elementType === "text") {
+        setSelectedElementId(id);
+        setEditingTextId(id);
+      }
+    },
+    [setSelectedElementId],
+  );
+
+  const removeElement = useElementStore((s) => s.removeElement);
+
+  /** Commit text edit and close the editor; remove if left empty. */
+  const handleTextComplete = useCallback(
+    (elementId: string, text: string) => {
+      pushUndo(getAllElements());
+      if (text.trim() === "") {
+        removeElement(elementId);
+        setSelectedElementId(null);
+      } else {
+        updateElement(elementId, { textContent: text });
+      }
+      setEditingTextId(null);
+    },
+    [updateElement, removeElement, pushUndo, getAllElements, setSelectedElementId],
+  );
+
   const sortedElements = [...elements].sort((a, b) => a.zIndex - b.zIndex);
 
+  const editingElement =
+    editingTextId ? useElementStore.getState().getElement(editingTextId) : null;
+
+  const cursorStyle = isDrawingTool ? "crosshair" : "default";
+
   return (
-    <Stage
-      ref={stageRef}
-      width={window.innerWidth}
-      height={window.innerHeight}
-      scaleX={scale}
-      scaleY={scale}
-      x={position.x}
-      y={position.y}
-      draggable
-      onWheel={handleWheel}
-      onDragEnd={handleDragEnd}
-      onClick={handleStageClick}
-      onTap={handleStageClick}
-      style={{ backgroundColor: "#1e1e1e", cursor: "default" }}
-    >
-      <Layer>
-        {sortedElements.map((element) =>
-          renderShape(
-            element,
-            element.id === selectedElementId,
-            handleElementSelect,
-          ),
-        )}
-      </Layer>
-    </Stage>
+    <>
+      <Stage
+        ref={stageRef}
+        width={window.innerWidth}
+        height={window.innerHeight}
+        scaleX={scale}
+        scaleY={scale}
+        x={position.x}
+        y={position.y}
+        onWheel={handleWheel}
+        onClick={handleStageClick}
+        onTap={handleStageClick}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        style={{ backgroundColor: "#1e1e1e", cursor: cursorStyle }}
+      >
+        <Layer>
+          {sortedElements.map((element) =>
+            renderShape(
+              element,
+              element.id === selectedElementId,
+              selectedTool === "select" && element.id === selectedElementId,
+              handleElementSelect,
+              handleElementDragEnd,
+              handleElementDblClick,
+              registerRef,
+            ),
+          )}
+          <SelectionOverlay shapeRefs={shapeRefs} />
+          <LockOverlay currentUserId="local-user" />
+        </Layer>
+      </Stage>
+
+      {editingElement && (
+        <InlineTextEditor
+          elementId={editingElement.id}
+          initialText={editingElement.textContent ?? ""}
+          x={editingElement.x}
+          y={editingElement.y}
+          width={editingElement.width}
+          height={editingElement.height}
+          fontSize={editingElement.fontSize ?? 16}
+          color={editingElement.textColor ?? "#FFFFFF"}
+          scale={scale}
+          stagePosition={position}
+          onComplete={handleTextComplete}
+        />
+      )}
+    </>
   );
 }

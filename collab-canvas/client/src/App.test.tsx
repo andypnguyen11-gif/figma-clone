@@ -2,20 +2,24 @@ import { render } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import App from "./App";
 
-/**
- * Konva requires a real canvas context which jsdom doesn't provide.
- * We mock react-konva so the component tree renders without errors.
- */
 vi.mock("react-konva", () => ({
-  Stage: ({ children, ...props }: Record<string, unknown>) =>
-    <div data-testid="konva-stage" {...props}>{children as React.ReactNode}</div>,
-  Layer: ({ children }: { children: React.ReactNode }) =>
-    <div data-testid="konva-layer">{children}</div>,
+  Stage: ({ children, ...props }: Record<string, unknown>) => (
+    <div data-testid="konva-stage" {...props}>
+      {children as React.ReactNode}
+    </div>
+  ),
+  Layer: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="konva-layer">{children}</div>
+  ),
   Rect: () => <div data-testid="konva-rect" />,
   Circle: () => <div data-testid="konva-circle" />,
   Line: () => <div data-testid="konva-line" />,
   RegularPolygon: () => <div data-testid="konva-polygon" />,
   Text: () => <div data-testid="konva-text" />,
+  Transformer: () => <div data-testid="konva-transformer" />,
+  Group: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="konva-group">{children}</div>
+  ),
 }));
 
 describe("App", () => {
@@ -30,5 +34,10 @@ describe("App", () => {
       ...getAllByTestId("konva-text"),
     ];
     expect(shapes.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("renders the toolbar", () => {
+    const { getByRole } = render(<App />);
+    expect(getByRole("toolbar")).toBeDefined();
   });
 });
