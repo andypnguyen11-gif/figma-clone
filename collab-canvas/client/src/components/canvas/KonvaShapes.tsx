@@ -142,8 +142,10 @@ const TriangleShape = React.memo(function TriangleShape(props: ShapeProps) {
   );
 });
 
-const TextShape = React.memo(function TextShape(props: ShapeProps) {
-  const { element, isSelected, draggable } = props;
+const TextShape = React.memo(function TextShape(
+  props: ShapeProps & { isEditing?: boolean },
+) {
+  const { element, isSelected, draggable, isEditing } = props;
   const { handleClick, handleDragEnd, handleDblClick, refCallback } =
     useShapeHandlers(props);
 
@@ -156,6 +158,7 @@ const TextShape = React.memo(function TextShape(props: ShapeProps) {
       fill={element.textColor ?? element.fill}
       width={element.width}
       height={element.height}
+      visible={!isEditing}
       onClick={handleClick}
       onTap={handleClick}
       onDragEnd={handleDragEnd}
@@ -177,6 +180,7 @@ export function renderShape(
   onDragEnd: (id: string, x: number, y: number) => void,
   onDblClick: (id: string) => void,
   registerRef: (id: string, node: Konva.Node | null) => void,
+  editingTextId?: string | null,
 ): React.ReactNode {
   const props: ShapeProps = {
     element,
@@ -198,7 +202,13 @@ export function renderShape(
     case "triangle":
       return <TriangleShape key={element.id} {...props} />;
     case "text":
-      return <TextShape key={element.id} {...props} />;
+      return (
+        <TextShape
+          key={element.id}
+          {...props}
+          isEditing={element.id === editingTextId}
+        />
+      );
     default:
       return null;
   }

@@ -121,21 +121,6 @@ const toolbarStyle: React.CSSProperties = {
   boxShadow: "0 4px 24px rgba(0,0,0,0.4)",
 };
 
-function buttonStyle(isActive: boolean): React.CSSProperties {
-  return {
-    width: 40,
-    height: 40,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    border: "none",
-    borderRadius: 8,
-    cursor: "pointer",
-    color: isActive ? "#FFFFFF" : "rgba(255,255,255,0.55)",
-    background: isActive ? "rgba(13,153,255,0.25)" : "transparent",
-    transition: "background 0.15s, color 0.15s",
-  };
-}
 
 export const Toolbar = React.memo(function Toolbar() {
   const selectedTool = useCanvasStore((s) => s.selectedTool);
@@ -157,10 +142,10 @@ export const Toolbar = React.memo(function Toolbar() {
         return (
           <button
             key={type}
+            className="toolbar-btn"
             aria-label={label}
             aria-pressed={active}
             title={label}
-            style={buttonStyle(active)}
             onClick={() => handleToolClick(type)}
           >
             <svg width="20" height="20" viewBox="0 0 24 24">

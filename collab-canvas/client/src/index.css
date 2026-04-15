@@ -14,3 +14,35 @@ body,
   overflow: hidden;
   font-family: system-ui, -apple-system, sans-serif;
 }
+
+.toolbar-btn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.55);
+  background: transparent;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+}
+
+.toolbar-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.toolbar-btn:active {
+  transform: scale(0.92);
+}
+
+.toolbar-btn[aria-pressed="true"] {
+  background: rgba(13, 153, 255, 0.25);
+  color: #ffffff;
+}
+
+.toolbar-btn[aria-pressed="true"]:hover {
+  background: rgba(13, 153, 255, 0.35);
+}

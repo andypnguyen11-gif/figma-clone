@@ -339,6 +339,7 @@ export default function CanvasViewport() {
               handleElementDragEnd,
               handleElementDblClick,
               registerRef,
+              editingTextId,
             ),
           )}
           <SelectionOverlay shapeRefs={shapeRefs} />
