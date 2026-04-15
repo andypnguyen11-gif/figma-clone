@@ -1,0 +1,84 @@
+---
+description: Code documentation standards — add meaningful comments and docstrings on important logic
+alwaysApply: true
+---
+
+# Code Documentation Standards
+
+Document the "why" and the "what matters" — not the obvious.
+
+## Backend (Python)
+
+- Every module gets a module-level docstring explaining its purpose and role in the architecture
+- Every service function and API route gets a docstring covering: what it does, key params, return value, and any side effects
+- Add inline comments for: business rules, non-obvious algorithms, concurrency/locking logic, and security-sensitive decisions
+- Document WebSocket event contracts (event name, payload shape, who sends it, who receives it)
+
+```python
+# ✅ GOOD
+class LockService:
+    """Manages element-level locking via Redis SETNX.
+
+    Locks are atomic (SETNX prevents races), expire after 30s (TTL),
+    and are refreshed by client heartbeats every ~10s.
+    On disconnect, all locks held by the user are released.
+    """
+
+    async def acquire(self, canvas_id: str, element_id: str, user_id: str) -> bool:
+        """Attempt to acquire an exclusive lock on an element.
+
+        Returns True if lock was acquired, False if already held by another user.
+        Uses Redis SETNX for atomic acquisition — two simultaneous requests
+        will never both succeed.
+        """
+```
+
+```python
+# ❌ BAD — states the obvious
+def get_user(user_id: str):
+    """Gets a user."""  # No value added
+    return db.query(User).get(user_id)  # queries the database
+```
+
+## Frontend (TypeScript / React)
+
+- Every Zustand store gets a top-of-file comment explaining what state it owns and why
+- Every custom hook gets a JSDoc comment: purpose, params, return value, usage example
+- Add inline comments for: complex state transitions, canvas math/geometry, WebSocket event handling, and performance-sensitive code
+- Document component props with TSDoc when the purpose isn't obvious from the name
+
+```typescript
+// ✅ GOOD
+
+/**
+ * Manages the acquire/release lifecycle for element locks.
+ * Automatically acquires a lock when selectedElementId changes,
+ * sends heartbeats every 10s to keep it alive, and releases
+ * on deselect or unmount.
+ *
+ * @param selectedElementId - currently selected element, or null
+ * @returns { isLocked, lockOwner } - lock state for UI feedback
+ */
+function useLockManager(selectedElementId: string | null) { ... }
+```
+
+```typescript
+// ❌ BAD
+// set the count
+setCount(count + 1);
+```
+
+## What to Always Document
+
+- **Business rules** — e.g., "locks expire after 30s to handle client crashes"
+- **Architectural decisions** — e.g., "Redis over DB for presence because TTL handles cleanup"
+- **Non-obvious behavior** — e.g., "throttled to 50ms to avoid flooding the WebSocket"
+- **Security boundaries** — e.g., "JWT validated here before WebSocket upgrade"
+- **Performance tradeoffs** — e.g., "memoized because Konva re-renders are expensive at scale"
+- **Integration contracts** — e.g., WebSocket event shapes, API request/response formats
+
+## What NOT to Document
+
+- Self-explanatory variable names and function calls
+- Framework boilerplate (imports, standard React hooks)
+- Trivial CRUD operations with obvious behavior

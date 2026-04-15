@@ -1,0 +1,62 @@
+---
+description: Enterprise-grade engineering standards — all code must be production-ready, scalable, and maintainable
+alwaysApply: true
+---
+
+# Enterprise Engineering Standards
+
+Every change must be written as if it will serve thousands of concurrent users and be maintained by a large team.
+
+## Architecture
+
+- Strict separation of concerns: routes → services → repositories/models
+- Never put business logic in route handlers — delegate to service layer
+- All cross-cutting concerns (auth, logging, error handling) use middleware, not inline code
+- Design for horizontal scaling — no in-memory state that can't be externalized (use Redis)
+
+## Backend (Python / FastAPI)
+
+- Type-annotate every function signature (params and return types)
+- Use Pydantic schemas for all request/response validation — never pass raw dicts across boundaries
+- Use dependency injection (`Depends()`) for DB sessions, auth, and services
+- Async endpoints by default (`async def`) — sync only when calling blocking I/O with proper threadpool
+- All DB queries go through SQLAlchemy models — no raw SQL strings
+- Use Alembic for every schema change — never modify tables manually
+- Environment config via `pydantic-settings` — no hardcoded secrets or connection strings
+- Structured error responses with consistent status codes and error shapes
+
+## Frontend (React / TypeScript)
+
+- Strict TypeScript — no `any`, no `@ts-ignore`, no `as` type casts unless truly unavoidable
+- Every component prop gets an explicit interface/type
+- State: Zustand stores for global state, local `useState`/refs for ephemeral UI state
+- Keep components small and composable — max ~150 lines per file before splitting
+- Memoize expensive renders (`React.memo`, `useMemo`, `useCallback`) where measurable
+- All API calls go through service modules in `services/` — never `fetch()` inline in components
+
+## Data Layer
+
+- Every DB table gets proper indexes on foreign keys and frequently queried columns
+- Use UUIDs for primary keys (avoids enumeration attacks, enables distributed ID generation)
+- All timestamps are UTC with timezone (`TIMESTAMP WITH TIME ZONE`)
+- Soft-delete pattern where data recovery may be needed
+- Migrations must be reversible (include downgrade steps)
+
+## Error Handling
+
+- Backend: raise typed exceptions, catch in middleware, return structured JSON errors
+- Frontend: global error boundary + per-request error handling in service layer
+- Never swallow errors silently — log or surface every caught exception
+
+## Security
+
+- JWT tokens in HTTP-only cookies or Authorization header — never localStorage
+- Validate and sanitize all user input at the boundary (Pydantic on backend, zod/schemas on frontend)
+- CORS restricted to explicit origins
+- Rate limiting on auth endpoints
+
+## Naming Conventions
+
+- Backend: `snake_case` for files, functions, variables; `PascalCase` for classes and Pydantic models
+- Frontend: `PascalCase` for components and types; `camelCase` for functions, variables, hooks
+- Test files mirror source files: `auth_service.py` → `test_auth_service.py`, `App.tsx` → `App.test.tsx`

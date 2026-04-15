@@ -1,0 +1,71 @@
+---
+description: Enforce feature-based folder structure — all new code must land in the correct location
+alwaysApply: true
+---
+
+# Project Folder Structure
+
+Follow the feature-sliced architecture. Never dump files in root-level catch-all folders.
+
+## Client (`collab-canvas/client/src/`)
+
+```
+app/                        ← app shell, providers, router
+  providers/AuthProvider.tsx
+  router/index.tsx
+
+components/                 ← UI components, grouped by domain
+  shared/                   ← cross-cutting reusable UI (Button, Modal, Toast)
+  canvas/                   ← canvas viewport, shape renderers, overlays
+  toolbar/                  ← tool selection bar
+  properties/               ← property editing panel
+  presence/                 ← remote cursor rendering
+  locking/                  ← lock indicator overlays
+  auth/                     ← login/signup forms
+
+features/                   ← state + logic, grouped by domain
+  canvas/                   ← canvas store, data hooks
+  elements/                 ← element store, mutations, realtime handlers
+  auth/                     ← auth store
+  presence/                 ← presence store
+  locking/                  ← lock store, lock manager hook, lock handlers
+  history/                  ← undo/redo store and hooks
+
+hooks/                      ← shared hooks not tied to one feature
+services/                   ← external communication
+  api/                      ← REST API client + per-resource modules
+  websocket/                ← WebSocket connection manager
+
+pages/                      ← route-level page components (thin wrappers)
+types/                      ← shared TypeScript interfaces and types
+utils/                      ← pure helper functions (geometry, formatting)
+```
+
+## Placement Rules
+
+- **New feature?** → create a folder under `features/` with its store, hooks, and handlers
+- **New UI component?** → place under `components/<domain>/`; if used across 3+ domains, move to `components/shared/`
+- **New API call?** → add to the relevant module in `services/api/` (e.g., `canvasApi.ts`), never inline `fetch()` in components
+- **New type/interface?** → add to `types/` if shared across features; keep feature-local types in the feature folder
+- **New page/route?** → add to `pages/`, keep it thin — delegate to components and hooks
+
+## Server (`collab-canvas/server/app/`)
+
+```
+api/routes/                 ← FastAPI route handlers (thin — delegate to services)
+core/                       ← config, security, shared middleware
+db/                         ← session factory, base model
+models/                     ← SQLAlchemy ORM models
+schemas/                    ← Pydantic request/response schemas
+services/                   ← business logic layer
+websocket/                  ← WS connection manager, event router, auth
+redis/                      ← Redis client helpers (presence, locks, pubsub)
+tests/                      ← mirrors source structure (test_auth.py, etc.)
+```
+
+## Placement Rules
+
+- **New endpoint?** → route in `api/routes/`, logic in `services/`, schema in `schemas/`
+- **New DB table?** → model in `models/`, migration via Alembic
+- **New Redis usage?** → helper in `redis/`, consumed by services
+- **Never put business logic in route handlers** — routes parse input, call services, return responses
