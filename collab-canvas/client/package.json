@@ -7,11 +7,17 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
+    "konva": "^9.3.18",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "react-konva": "^18.2.10",
+    "react-router-dom": "^7.6.1",
+    "zustand": "^5.0.5"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
