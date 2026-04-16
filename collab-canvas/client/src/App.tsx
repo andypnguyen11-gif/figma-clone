@@ -10,7 +10,7 @@ import CanvasViewport from "./components/canvas/CanvasViewport.tsx";
 import { Toolbar } from "./components/toolbar/Toolbar.tsx";
 import { PropertyPanel } from "./components/properties/PropertyPanel.tsx";
 import { useElementStore } from "./features/elements/elementStore.ts";
-import { performUndo, performRedo, deleteSelectedElement } from "./features/history/useUndoRedo.ts";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts.ts";
 import type { CanvasElement } from "./types/element.ts";
 
 const demoElements: CanvasElement[] = [
@@ -103,34 +103,7 @@ function App() {
     setElements(demoElements);
   }, [setElements]);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
-        return;
-      }
-
-      if ((e.key === "Delete" || e.key === "Backspace") && !e.metaKey && !e.ctrlKey) {
-        e.preventDefault();
-        deleteSelectedElement();
-        return;
-      }
-
-      if (e.key === "z" && (e.metaKey || e.ctrlKey) && e.shiftKey) {
-        e.preventDefault();
-        performRedo();
-        return;
-      }
-
-      if (e.key === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
-        e.preventDefault();
-        performUndo();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  useKeyboardShortcuts();
 
   return (
     <>
