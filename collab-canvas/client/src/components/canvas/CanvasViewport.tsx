@@ -30,6 +30,7 @@ import {
 import SelectionOverlay from "./SelectionOverlay.tsx";
 import { InlineTextEditor } from "./InlineTextEditor.tsx";
 import { LockOverlay } from "../locking/LockOverlay.tsx";
+import { PresenceLayer } from "../presence/PresenceLayer.tsx";
 
 /** Zoom speed — higher = faster zoom per scroll tick. */
 const ZOOM_FACTOR = 1.1;
@@ -37,13 +38,23 @@ const ZOOM_FACTOR = 1.1;
 /** Distance in px the mouse must move to be considered a drag (not a click). */
 const DRAG_THRESHOLD = 4;
 
+export interface CanvasViewportProps {
+  /**
+   * When set, forwards pointer position in canvas space for ``cursor:move``
+   * (throttled by the parent). Uses the live Stage transform so panning stays accurate.
+   */
+  onCursorCanvasMove?: (canvasX: number, canvasY: number) => void;
+}
+
 interface DrawingState {
   startCanvas: Point;
   startScreen: Point;
   currentCanvas: Point;
 }
 
-export default function CanvasViewport() {
+export default function CanvasViewport({
+  onCursorCanvasMove,
+}: CanvasViewportProps = {}) {
   const stageRef = useRef<Konva.Stage>(null);
   const shapeRefs = useRef<Map<string, Konva.Node>>(new Map());
   const [scale, setScale] = useState(1);
@@ -173,8 +184,16 @@ export default function CanvasViewport() {
           prev ? { ...prev, currentCanvas: canvasPos } : null,
         );
       }
+
+      if (onCursorCanvasMove) {
+        const sx = stage.x();
+        const sy = stage.y();
+        const sc = stage.scaleX();
+        const canvasPos = screenToCanvas(pointer, { x: sx, y: sy }, sc);
+        onCursorCanvasMove(canvasPos.x, canvasPos.y);
+      }
     },
-    [drawing, position, scale],
+    [drawing, position, scale, onCursorCanvasMove],
   );
 
   /**
@@ -420,6 +439,7 @@ export default function CanvasViewport() {
           {preview}
           <SelectionOverlay shapeRefs={shapeRefs} />
           <LockOverlay currentUserId={currentUserId} />
+          <PresenceLayer currentUserId={currentUserId} />
         </Layer>
       </Stage>
 

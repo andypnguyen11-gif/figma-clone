@@ -22,12 +22,15 @@ import { useElementStore } from "../features/elements/elementStore.ts";
 import { mapElementDtoToCanvasElement } from "../features/elements/mapElementDto.ts";
 import { idsRemovedFromCanvas } from "../features/elements/persistHelpers.ts";
 import { processCanvasWsMessage } from "../features/elements/realtimeHandlers.ts";
+import { usePresenceStore } from "../features/presence/presenceStore.ts";
+import { processPresenceWsMessage } from "../features/presence/presenceHandlers.ts";
 import { useLockStore } from "../features/locking/lockStore.ts";
 import { useLockManager } from "../features/locking/useLockManager.ts";
 import { useAuthStore } from "../features/auth/authStore.ts";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts.ts";
 import { useDebouncedSaveOnElementChange } from "../hooks/useDebouncedSaveOnElementChange.ts";
 import { useCanvasWebSocket } from "../hooks/useCanvasWebSocket.ts";
+import { useThrottledCursorBroadcast } from "../hooks/useThrottledCursorBroadcast.ts";
 import { canvasApi } from "../services/api/canvasApi.ts";
 import { elementsApi } from "../services/api/elementsApi.ts";
 import type { CanvasElement } from "../types/element.ts";
@@ -89,6 +92,7 @@ export function CanvasPage() {
   const { canvasId } = useParams<{ canvasId: string }>();
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token);
+  const userId = useAuthStore((s) => s.user?.id ?? "");
   const logout = useAuthStore((s) => s.logout);
   const setCanvas = useCanvasStore((s) => s.setCanvas);
   const setElements = useElementStore((s) => s.setElements);
@@ -108,6 +112,7 @@ export function CanvasPage() {
 
     let cancelled = false;
     useLockStore.getState().clearLocks();
+    usePresenceStore.getState().clearCursors();
 
     async function load() {
       try {
@@ -224,7 +229,8 @@ export function CanvasPage() {
         persistedElementIdsRef.current.add(elementId);
       },
     });
-  }, []);
+    processPresenceWsMessage(data, { currentUserId: userId });
+  }, [userId]);
 
   const {
     status: wsStatus,
@@ -237,6 +243,11 @@ export function CanvasPage() {
     enabled: Boolean(canvasId && token && !loading && !error),
     onMessage: handleWsMessage,
   });
+
+  const broadcastCursorMove = useThrottledCursorBroadcast(
+    sendJson,
+    wsStatus === "live",
+  );
 
   useLockManager({
     enabled: wsStatus === "live" && Boolean(canvasId),
@@ -316,7 +327,7 @@ export function CanvasPage() {
           </div>
         )}
       </header>
-      <CanvasViewport />
+      <CanvasViewport onCursorCanvasMove={broadcastCursorMove} />
       <Toolbar />
       <PropertyPanel />
     </>

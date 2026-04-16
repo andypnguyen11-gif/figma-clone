@@ -51,10 +51,21 @@ export interface LockHeartbeatEvent {
 
 // ── Presence events ─────────────────────────────────────────────────
 
-export interface CursorMoveEvent {
+/** Outbound: client → server (coordinates only). */
+export interface CursorMoveOutbound {
   event: "cursor:move";
-  userId: string;
-  userName: string;
+  x: number;
+  y: number;
+}
+
+/**
+ * Inbound broadcast: server mirrors snake_case keys (matches FastAPI JSON).
+ */
+export interface CursorMoveBroadcast {
+  event: "cursor:move";
+  canvas_id: string;
+  user_id: string;
+  user_name: string;
   color: string;
   x: number;
   y: number;
@@ -67,9 +78,10 @@ export interface UserJoinedEvent {
   color: string;
 }
 
-export interface UserLeftEvent {
+export interface UserLeftBroadcast {
   event: "user:left";
-  userId: string;
+  canvas_id: string;
+  user_id: string;
 }
 
 // ── Union type ──────────────────────────────────────────────────────
@@ -82,6 +94,6 @@ export type WebSocketEvent =
   | LockReleaseEvent
   | LockDeniedEvent
   | LockHeartbeatEvent
-  | CursorMoveEvent
+  | CursorMoveBroadcast
   | UserJoinedEvent
-  | UserLeftEvent;
+  | UserLeftBroadcast;

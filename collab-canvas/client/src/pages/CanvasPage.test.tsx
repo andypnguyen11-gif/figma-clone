@@ -9,6 +9,7 @@ import { CanvasPage } from "./CanvasPage.tsx";
 import { useCanvasStore } from "../features/canvas/canvasStore.ts";
 import { useElementStore } from "../features/elements/elementStore.ts";
 import { useAuthStore } from "../features/auth/authStore.ts";
+import type { CanvasWsStatus } from "../hooks/useCanvasWebSocket.ts";
 
 vi.mock("../services/api/canvasApi.ts", () => ({
   canvasApi: { get: vi.fn(), getShareInfo: vi.fn() },
@@ -28,8 +29,13 @@ vi.mock("../components/properties/PropertyPanel.tsx", () => ({
 }));
 
 const mockUseCanvasWebSocket = vi.hoisted(() =>
-  vi.fn(() => ({
-    status: "offline" as const,
+  vi.fn((): {
+    status: CanvasWsStatus;
+    lastError: string | null;
+    hasCollaborators: boolean;
+    sendJson: ReturnType<typeof vi.fn>;
+  } => ({
+    status: "offline",
     lastError: null,
     hasCollaborators: false,
     sendJson: vi.fn(),
