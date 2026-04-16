@@ -26,7 +26,11 @@ const makeElement = (overrides: Partial<CanvasElement> = {}): CanvasElement => (
 
 describe("elementStore", () => {
   beforeEach(() => {
-    useElementStore.setState({ elements: new Map(), selectedElementId: null });
+    useElementStore.setState({
+      elements: new Map(),
+      selectedElementId: null,
+      editingTextElementId: null,
+    });
   });
 
   it("starts empty", () => {
@@ -90,5 +94,45 @@ describe("elementStore", () => {
     expect(useElementStore.getState().getElement("local-temp")).toBeUndefined();
     expect(useElementStore.getState().getElement("server-id")?.x).toBe(5);
     expect(useElementStore.getState().selectedElementId).toBe("server-id");
+  });
+
+  it("replaceElement remaps editingTextElementId when the edited row gets a server id", () => {
+    const local = makeElement({ id: "local-text", elementType: "text" });
+    const server = makeElement({ id: "server-text", elementType: "text" });
+    useElementStore.getState().addElement(local);
+    useElementStore.getState().setEditingTextElementId("local-text");
+    useElementStore.getState().replaceElement("local-text", server);
+
+    expect(useElementStore.getState().editingTextElementId).toBe("server-text");
+  });
+
+  it("upsertElement inserts or replaces with a newer updatedAt", () => {
+    useElementStore.getState().addElement(makeElement({ id: "e1", x: 0 }));
+    useElementStore
+      .getState()
+      .upsertElement(
+        makeElement({
+          id: "e1",
+          x: 99,
+          updatedAt: "2026-02-01T00:00:00Z",
+        }),
+      );
+    expect(useElementStore.getState().getElement("e1")?.x).toBe(99);
+  });
+
+  it("upsertElement ignores stale server rows", () => {
+    useElementStore.getState().addElement(
+      makeElement({ id: "e1", x: 50, updatedAt: "2026-06-01T00:00:00Z" }),
+    );
+    useElementStore
+      .getState()
+      .upsertElement(
+        makeElement({
+          id: "e1",
+          x: 0,
+          updatedAt: "2026-01-01T00:00:00Z",
+        }),
+      );
+    expect(useElementStore.getState().getElement("e1")?.x).toBe(50);
   });
 });

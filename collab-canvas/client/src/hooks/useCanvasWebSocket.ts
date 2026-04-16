@@ -22,6 +22,8 @@ interface UseCanvasWebSocketResult {
   lastError: string | null;
   /** True when the server reports at least two sockets in this canvas room (you + someone else). */
   hasCollaborators: boolean;
+  /** Outbound JSON helper (no-ops until the socket is ready). */
+  sendJson: (payload: unknown) => void;
 }
 
 function isRoomPeersPayload(data: unknown): data is {
@@ -46,11 +48,13 @@ export function useCanvasWebSocket(
   const [peerCount, setPeerCount] = useState<number | null>(null);
   const onMessageRef = useRef(options.onMessage);
   onMessageRef.current = options.onMessage;
+  const sendJsonRef = useRef<(payload: unknown) => void>(() => {});
 
   const hasCollaborators = peerCount !== null && peerCount >= 2;
 
   useEffect(() => {
     if (!options.enabled || !options.canvasId || !options.token) {
+      sendJsonRef.current = () => {};
       setStatus("offline");
       setPeerCount(null);
       return;
@@ -87,11 +91,17 @@ export function useCanvasWebSocket(
         setPeerCount(null);
       },
     });
+    sendJsonRef.current = handle.sendJson;
 
     return () => {
+      sendJsonRef.current = () => {};
       handle.disconnect();
     };
   }, [options.enabled, options.canvasId, options.token]);
 
-  return { status, lastError, hasCollaborators };
+  const sendJson = (payload: unknown) => {
+    sendJsonRef.current(payload);
+  };
+
+  return { status, lastError, hasCollaborators, sendJson };
 }

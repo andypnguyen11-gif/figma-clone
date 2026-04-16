@@ -32,6 +32,7 @@ function seedStore(element: CanvasElement, selected = true): void {
   useElementStore.setState({
     elements,
     selectedElementId: selected ? element.id : null,
+    editingTextElementId: null,
   });
 }
 
@@ -40,6 +41,7 @@ describe("PropertyPanel", () => {
     useElementStore.setState({
       elements: new Map(),
       selectedElementId: null,
+      editingTextElementId: null,
     });
   });
 

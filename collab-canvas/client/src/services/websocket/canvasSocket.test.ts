@@ -2,6 +2,7 @@
  * Tests for authenticated canvas WebSocket URL building and connection wrapper.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { waitFor } from "@testing-library/react";
 import {
   buildCanvasWebSocketUrl,
   connectCanvasSocket,
@@ -9,26 +10,43 @@ import {
 
 type MockWsInstance = {
   url: string;
+  readyState: number;
   onopen: (() => void) | null;
   onmessage: ((ev: MessageEvent) => void) | null;
   onerror: (() => void) | null;
   onclose: (() => void) | null;
   close: () => void;
+  send: (data: string) => void;
   simulate: (data: unknown) => void;
 };
+
+const OPEN = 1;
+const CONNECTING = 0;
 
 function installMockWebSocket(): () => void {
   const ctor = vi.fn(function MockWebSocket(this: MockWsInstance, url: string) {
     this.url = url;
+    this.readyState = CONNECTING;
     this.onopen = null;
     this.onmessage = null;
     this.onerror = null;
     this.onclose = null;
+    this.send = vi.fn();
     this.close = () => this.onclose?.();
     this.simulate = (data: unknown) => {
       this.onmessage?.({ data: JSON.stringify(data) } as MessageEvent);
     };
+    queueMicrotask(() => {
+      this.readyState = OPEN;
+      this.onopen?.();
+    });
   });
+  (
+    ctor as unknown as { OPEN: number; CONNECTING: number }
+  ).OPEN = OPEN;
+  (
+    ctor as unknown as { OPEN: number; CONNECTING: number }
+  ).CONNECTING = CONNECTING;
   vi.stubGlobal("WebSocket", ctor);
   return () => {
     vi.unstubAllGlobals();
@@ -107,5 +125,24 @@ describe("connectCanvasSocket", () => {
     const closeSpy = vi.spyOn(instance, "close");
     disconnect();
     expect(closeSpy).toHaveBeenCalled();
+  });
+
+  it("sendJson transmits JSON when the socket is open", async () => {
+    const onMessage = vi.fn();
+    const { sendJson } = connectCanvasSocket({
+      canvasId: "cid",
+      token: "jwt",
+      location: { protocol: "http:", host: "h" },
+      onMessage,
+    });
+    const instance = vi.mocked(WebSocket).mock
+      .instances[0] as unknown as MockWsInstance;
+    await waitFor(() => {
+      expect(instance.readyState).toBe(OPEN);
+    });
+    sendJson({ event: "lock:acquire", element_id: "e1" });
+    expect(instance.send).toHaveBeenCalledWith(
+      JSON.stringify({ event: "lock:acquire", element_id: "e1" }),
+    );
   });
 });

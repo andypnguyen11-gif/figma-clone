@@ -16,7 +16,7 @@ describe("useCanvasWebSocket", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     disconnect.mockReset();
-    connectCanvasSocket.mockReturnValue({ disconnect });
+    connectCanvasSocket.mockReturnValue({ disconnect, sendJson: vi.fn() });
   });
 
   afterEach(() => {

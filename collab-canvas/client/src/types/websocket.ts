@@ -5,55 +5,54 @@
  * Payload shapes mirror what the server broadcasts.
  */
 
-import type { CanvasElement, ElementUpdatePayload } from "./element.ts";
+import type { CanvasElement } from "./element.ts";
 
 // ── Element events ──────────────────────────────────────────────────
 
 export interface ElementCreatedEvent {
-  type: "element:created";
+  event: "element:created";
   element: CanvasElement;
 }
 
 export interface ElementUpdatedEvent {
-  type: "element:updated";
-  elementId: string;
-  changes: ElementUpdatePayload;
+  event: "element:updated";
+  element: CanvasElement;
 }
 
 export interface ElementDeletedEvent {
-  type: "element:deleted";
-  elementId: string;
+  event: "element:deleted";
+  element_id: string;
 }
 
 // ── Lock events ─────────────────────────────────────────────────────
 
 export interface LockAcquireEvent {
-  type: "lock:acquire";
-  elementId: string;
-  userId: string;
-  userName: string;
+  event: "lock:acquire";
+  element_id: string;
+  user_id: string;
+  user_name: string;
   color: string;
 }
 
 export interface LockReleaseEvent {
-  type: "lock:release";
-  elementId: string;
+  event: "lock:release";
+  element_id: string;
 }
 
 export interface LockDeniedEvent {
-  type: "lock:denied";
-  elementId: string;
+  event: "lock:denied";
+  element_id: string;
 }
 
 export interface LockHeartbeatEvent {
-  type: "lock:heartbeat";
-  elementId: string;
+  event: "lock:heartbeat";
+  element_id: string;
 }
 
 // ── Presence events ─────────────────────────────────────────────────
 
 export interface CursorMoveEvent {
-  type: "cursor:move";
+  event: "cursor:move";
   userId: string;
   userName: string;
   color: string;
@@ -62,14 +61,14 @@ export interface CursorMoveEvent {
 }
 
 export interface UserJoinedEvent {
-  type: "user:joined";
+  event: "user:joined";
   userId: string;
   userName: string;
   color: string;
 }
 
 export interface UserLeftEvent {
-  type: "user:left";
+  event: "user:left";
   userId: string;
 }
 

@@ -29,6 +29,8 @@ export interface ConnectCanvasSocketOptions {
 
 export interface CanvasSocketHandle {
   disconnect: () => void;
+  /** Serialises JSON and sends when the socket is (or becomes) open. */
+  sendJson: (payload: unknown) => void;
 }
 
 export function connectCanvasSocket(
@@ -45,6 +47,18 @@ export function connectCanvasSocket(
 
   const url = buildCanvasWebSocketUrl(options.canvasId, options.token, loc);
   const ws = new WebSocket(url);
+  const pending: string[] = [];
+
+  const flushPending = () => {
+    while (ws.readyState === WebSocket.OPEN && pending.length > 0) {
+      const next = pending.shift();
+      if (next) ws.send(next);
+    }
+  };
+
+  ws.onopen = () => {
+    flushPending();
+  };
 
   ws.onmessage = (ev: MessageEvent) => {
     try {
@@ -64,6 +78,14 @@ export function connectCanvasSocket(
   return {
     disconnect: () => {
       ws.close();
+    },
+    sendJson: (payload: unknown) => {
+      const body = JSON.stringify(payload);
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(body);
+      } else if (ws.readyState === WebSocket.CONNECTING) {
+        pending.push(body);
+      }
     },
   };
 }

@@ -27,7 +27,11 @@ const makeElement = (overrides: Partial<CanvasElement> = {}): CanvasElement => (
 });
 
 function resetStores(): void {
-  useElementStore.setState({ elements: new Map(), selectedElementId: null });
+  useElementStore.setState({
+    elements: new Map(),
+    selectedElementId: null,
+    editingTextElementId: null,
+  });
   useHistoryStore.setState({ undoStack: [], redoStack: [] });
 }
 

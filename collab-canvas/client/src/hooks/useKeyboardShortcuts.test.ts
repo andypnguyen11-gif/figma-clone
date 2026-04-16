@@ -58,7 +58,11 @@ describe("useKeyboardShortcuts", () => {
 
   beforeEach(() => {
     useCanvasStore.setState({ selectedTool: "select" });
-    useElementStore.setState({ elements: new Map(), selectedElementId: null });
+    useElementStore.setState({
+      elements: new Map(),
+      selectedElementId: null,
+      editingTextElementId: null,
+    });
     useHistoryStore.setState({ undoStack: [], redoStack: [] });
 
     const result = renderHook(() => useKeyboardShortcuts());
