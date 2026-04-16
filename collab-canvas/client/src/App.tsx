@@ -7,6 +7,7 @@
 import { useEffect } from "react";
 import CanvasViewport from "./components/canvas/CanvasViewport.tsx";
 import { Toolbar } from "./components/toolbar/Toolbar.tsx";
+import { PropertyPanel } from "./components/properties/PropertyPanel.tsx";
 import { useElementStore } from "./features/elements/elementStore.ts";
 import type { CanvasElement } from "./types/element.ts";
 
@@ -104,6 +105,7 @@ function App() {
     <>
       <CanvasViewport />
       <Toolbar />
+      <PropertyPanel />
     </>
   );
 }
