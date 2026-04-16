@@ -4,7 +4,10 @@ Shared test fixtures for the Collab Canvas backend test suite.
 Provides an isolated in-memory SQLite database per test session so model
 and endpoint tests run fast without requiring a running PostgreSQL instance.
 The `client` fixture wires FastAPI's DB dependency to the test session.
+Redis is replaced with ``fakeredis`` for every test so locking tests do not
+require a running Redis server.
 """
+import fakeredis
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -13,6 +16,15 @@ from sqlalchemy.orm import sessionmaker
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
+from app.redis import client as redis_client_module
+
+
+@pytest.fixture(autouse=True)
+def redis_client(monkeypatch: pytest.MonkeyPatch):
+    """In-memory Redis per test — patch ``get_redis`` before any route runs."""
+    fake = fakeredis.FakeStrictRedis(decode_responses=True)
+    monkeypatch.setattr(redis_client_module, "get_redis", lambda: fake)
+    yield fake
 
 
 @pytest.fixture(scope="session")

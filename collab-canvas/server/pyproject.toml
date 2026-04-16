@@ -5,6 +5,7 @@ description = "Collab Canvas — real-time collaborative design tool backend"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "fakeredis>=2.20.0",
     "alembic>=1.12.1",
     "fastapi[standard]>=0.103.2",
     "pydantic-settings>=2.0.3",

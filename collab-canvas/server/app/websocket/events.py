@@ -11,3 +11,12 @@ EVENT_CONNECTED = "connected"
 # Broadcast to all sockets in a canvas room after connect/disconnect so clients
 # can show collaboration UI only when peer_count > 1.
 EVENT_ROOM_PEERS = "room:peers"
+
+EVENT_ELEMENT_CREATED = "element:created"
+EVENT_ELEMENT_UPDATED = "element:updated"
+EVENT_ELEMENT_DELETED = "element:deleted"
+
+EVENT_LOCK_ACQUIRE = "lock:acquire"
+EVENT_LOCK_RELEASE = "lock:release"
+EVENT_LOCK_DENIED = "lock:denied"
+EVENT_LOCK_HEARTBEAT = "lock:heartbeat"

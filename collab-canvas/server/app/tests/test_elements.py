@@ -4,7 +4,14 @@ Tests for element CRUD endpoints.
 All endpoints require authentication and a valid canvas.
 Covers creation of all five shape types, styling defaults, property
 updates, text-specific fields, deletion, and auth/404 edge cases.
+
+Updates and deletes require a Redis element lock (typically acquired via
+WebSocket); tests use :func:`~app.services.lock_service.grant_lock_for_test`.
 """
+
+import uuid
+
+from app.services.lock_service import grant_lock_for_test
 
 
 class _ElementTestBase:
@@ -33,7 +40,6 @@ class _ElementTestBase:
 
     def _auth(self, user) -> dict:
         return {"Authorization": f"Bearer {user['access_token']}"}
-
 
 class TestCreateElement(_ElementTestBase):
     def test_create_rectangle(self, client):
@@ -243,6 +249,25 @@ class TestUpdateElement(_ElementTestBase):
         assert data["fill"] == "#FF0000"
         assert data["opacity"] == 0.5
         assert data["rotation"] == 90.0
+
+    def test_update_element_when_peer_holds_lock_returns_423(
+        self, client, redis_client
+    ):
+        user, canvas = self._setup(client)
+        element = self._create_element(client, user, canvas)
+        other = uuid.uuid4()
+        grant_lock_for_test(
+            redis_client,
+            uuid.UUID(str(canvas["id"])),
+            uuid.UUID(str(element["id"])),
+            other,
+        )
+        response = client.patch(
+            f"/api/canvas/{canvas['id']}/elements/{element['id']}",
+            json={"x": 100.0},
+            headers=self._auth(user),
+        )
+        assert response.status_code == 423
 
     def test_update_element_not_found(self, client):
         user, canvas = self._setup(client)

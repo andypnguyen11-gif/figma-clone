@@ -3,17 +3,21 @@ Element CRUD route handlers.
 
 All routes require authentication and a valid canvas ID.
 Business logic is delegated to services/element_service.py.
+Successful mutations broadcast ``element:*`` WebSocket events to the canvas room.
 """
 import uuid
 
 from fastapi import APIRouter, Depends, Response, status
+from redis import Redis
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
 from app.db.session import get_db
 from app.models.user import User
+from app.redis.client import get_redis_dependency
 from app.schemas.element import ElementCreate, ElementResponse, ElementUpdate
 from app.services import element_service
+from app.services import realtime_sync_service
 
 router = APIRouter(prefix="/canvas/{canvas_id}/elements", tags=["elements"])
 
@@ -50,6 +54,7 @@ async def create_element(
 ) -> ElementResponse:
     """Create a new element on the canvas."""
     element = element_service.create_element(canvas_id, data, db)
+    await realtime_sync_service.broadcast_element_created(canvas_id, element)
     return _to_response(element)
 
 
@@ -71,9 +76,13 @@ async def update_element(
     data: ElementUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    redis_client: Redis = Depends(get_redis_dependency),
 ) -> ElementResponse:
     """Partially update an element (position, styling, text, etc.)."""
-    element = element_service.update_element(canvas_id, element_id, data, db)
+    element = element_service.update_element(
+        canvas_id, element_id, data, db, current_user.id, redis_client
+    )
+    await realtime_sync_service.broadcast_element_updated(canvas_id, element)
     return _to_response(element)
 
 
@@ -83,7 +92,11 @@ async def delete_element(
     element_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    redis_client: Redis = Depends(get_redis_dependency),
 ) -> Response:
     """Delete an element from the canvas."""
-    element_service.delete_element(canvas_id, element_id, db)
+    element_service.delete_element(
+        canvas_id, element_id, db, current_user.id, redis_client
+    )
+    await realtime_sync_service.broadcast_element_deleted(canvas_id, element_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

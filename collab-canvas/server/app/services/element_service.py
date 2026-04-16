@@ -2,17 +2,19 @@
 Element service — handles CRUD for canvas elements (shapes).
 
 Validates that the parent canvas exists before any mutation.
-Lock-guard logic (reject mutations from non-lock-holders) will be
-added in PR-14 when the Redis locking system is implemented.
+Updates and deletes return 423 when another user holds the Redis lock;
+mutations are allowed if no lock key exists (solo edit / before WS acquire).
 """
 import uuid
 
 from fastapi import HTTPException, status
+from redis import Redis
 from sqlalchemy.orm import Session
 
 from app.models.element import Element
 from app.schemas.element import ElementCreate, ElementUpdate
 from app.services.canvas_service import get_canvas
+from app.services.lock_service import ensure_element_lock
 
 
 def create_element(
@@ -55,8 +57,10 @@ def update_element(
     element_id: uuid.UUID,
     data: ElementUpdate,
     db: Session,
+    user_id: uuid.UUID,
+    redis_client: Redis,
 ) -> Element:
-    """Partially update an element. Raises 404 if not found."""
+    """Partially update an element. Raises 404 if not found, 423 if not lock holder."""
     element = (
         db.query(Element)
         .filter(Element.id == element_id, Element.canvas_id == canvas_id)
@@ -67,6 +71,8 @@ def update_element(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Element not found",
         )
+
+    ensure_element_lock(redis_client, canvas_id, element_id, user_id)
 
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -77,9 +83,13 @@ def update_element(
 
 
 def delete_element(
-    canvas_id: uuid.UUID, element_id: uuid.UUID, db: Session
+    canvas_id: uuid.UUID,
+    element_id: uuid.UUID,
+    db: Session,
+    user_id: uuid.UUID,
+    redis_client: Redis,
 ) -> None:
-    """Delete an element. Raises 404 if not found."""
+    """Delete an element. Raises 404 if not found, 423 if not lock holder."""
     element = (
         db.query(Element)
         .filter(Element.id == element_id, Element.canvas_id == canvas_id)
@@ -90,5 +100,8 @@ def delete_element(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Element not found",
         )
+
+    ensure_element_lock(redis_client, canvas_id, element_id, user_id)
+
     db.delete(element)
     db.commit()
