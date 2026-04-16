@@ -6,8 +6,9 @@
  * font-size and text-color controls. All changes are applied immediately
  * to the element store so the canvas reflects edits in real time.
  */
-import React, { useCallback } from "react";
+import React, { useCallback, useRef } from "react";
 import { useElementStore } from "../../features/elements/elementStore.ts";
+import { pushSnapshot } from "../../features/history/useUndoRedo.ts";
 import type { ElementUpdatePayload } from "../../types/element.ts";
 
 export const PropertyPanel = React.memo(function PropertyPanel() {
@@ -17,11 +18,23 @@ export const PropertyPanel = React.memo(function PropertyPanel() {
   );
   const updateElement = useElementStore((s) => s.updateElement);
 
+  /**
+   * Debounce guard — push one undo snapshot per rapid-fire edit burst
+   * (e.g. dragging a slider). Captures state on the first change,
+   * then ignores subsequent pushes within 300ms.
+   */
+  const lastPushTime = useRef(0);
+  const DEBOUNCE_MS = 300;
+
   const applyChange = useCallback(
     (changes: ElementUpdatePayload) => {
-      if (selectedElementId) {
-        updateElement(selectedElementId, changes);
+      if (!selectedElementId) return;
+      const now = Date.now();
+      if (now - lastPushTime.current > DEBOUNCE_MS) {
+        pushSnapshot();
+        lastPushTime.current = now;
       }
+      updateElement(selectedElementId, changes);
     },
     [selectedElementId, updateElement],
   );

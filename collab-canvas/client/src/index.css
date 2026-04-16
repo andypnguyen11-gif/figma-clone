@@ -47,6 +47,18 @@ body,
   background: rgba(13, 153, 255, 0.35);
 }
 
+.toolbar-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+  pointer-events: none;
+}
+
+.toolbar-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
 /* ---------- Property Panel ---------- */
 
 .property-panel {
