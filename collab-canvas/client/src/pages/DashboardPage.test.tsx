@@ -2,7 +2,7 @@
  * Tests for DashboardPage — lists owned canvases and create/join flows.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { DashboardPage } from "./DashboardPage.tsx";
 import { useAuthStore } from "../features/auth/authStore.ts";
@@ -40,6 +40,8 @@ describe("DashboardPage", () => {
         id: "canvas-1",
         title: "My Board",
         owner_id: "u1",
+        owner_display_name: "Alice",
+        is_owner: true,
         share_token: "tok1",
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-01-02T00:00:00Z",
@@ -75,6 +77,40 @@ describe("DashboardPage", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent(/network down/i);
+    });
+  });
+
+  it("join extracts token from a pasted invite URL before calling the API", async () => {
+    vi.mocked(canvasApi.listMine).mockResolvedValue([]);
+    vi.mocked(canvasApi.joinByToken).mockResolvedValue({
+      id: "joined-1",
+      title: "Shared",
+      owner_id: "other",
+      share_token: "tok",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(canvasApi.listMine).toHaveBeenCalled();
+    });
+
+    const input = screen.getByPlaceholderText(/paste share token or invite link/i);
+    fireEvent.change(input, {
+      target: {
+        value:
+          "http://localhost:8000/canvas/join/a1b2c3d4e5f6789012345678abcdef01",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^join$/i }));
+
+    await waitFor(() => {
+      expect(canvasApi.joinByToken).toHaveBeenCalledWith(
+        "a1b2c3d4e5f6789012345678abcdef01",
+        "test-token",
+      );
     });
   });
 });

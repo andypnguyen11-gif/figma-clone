@@ -41,16 +41,22 @@ const canvasResponse = {
   updated_at: "2026-01-01T00:00:00Z",
 };
 
+const canvasListItem = {
+  ...canvasResponse,
+  owner_display_name: "Alice",
+  is_owner: true,
+};
+
 describe("canvasApi.listMine", () => {
   it("sends GET /api/canvas with auth", async () => {
-    mockFetchSuccess([canvasResponse]);
+    mockFetchSuccess([canvasListItem]);
 
     const result = await canvasApi.listMine(TOKEN);
 
     expect(fetch).toHaveBeenCalledWith("/api/canvas", {
       headers: { Authorization: `Bearer ${TOKEN}` },
     });
-    expect(result).toEqual([canvasResponse]);
+    expect(result).toEqual([canvasListItem]);
   });
 
   it("returns empty array from JSON", async () => {

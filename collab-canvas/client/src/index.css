@@ -488,7 +488,14 @@ body,
 .dashboard-card h2 {
   font-size: 15px;
   font-weight: 600;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
+}
+
+.dashboard-list-intro {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.42);
+  line-height: 1.35;
+  margin: 0 0 12px;
 }
 
 .dashboard-form {
@@ -533,6 +540,20 @@ body,
   display: block;
   font-size: 14px;
   font-weight: 500;
+}
+
+.dashboard-canvas-owner {
+  display: block;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.dashboard-canvas-owner--you {
+  color: rgba(13, 153, 255, 0.9);
+}
+
+.dashboard-canvas-owner--shared {
+  color: rgba(250, 204, 21, 0.85);
 }
 
 .dashboard-canvas-meta {

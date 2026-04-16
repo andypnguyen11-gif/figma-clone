@@ -1,15 +1,16 @@
 /**
  * DashboardPage — post-login landing page.
  *
- * Lists canvases owned by the user (GET /api/canvas) with links to open
- * them. Also supports creating a new canvas or joining via share token.
+ * Lists canvases you own and canvases you joined (GET /api/canvas) with links
+ * to open them. Also supports creating a new canvas or joining via share token.
  */
 import { useState, useEffect } from "react";
 import type { FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../features/auth/authStore.ts";
 import { canvasApi } from "../services/api/canvasApi.ts";
-import type { CanvasResponseDTO } from "../services/api/canvasApi.ts";
+import type { CanvasListItemDTO } from "../services/api/canvasApi.ts";
+import { parseShareTokenFromInput } from "../utils/shareToken.ts";
 
 export function DashboardPage() {
   const token = useAuthStore((s) => s.token);
@@ -17,7 +18,7 @@ export function DashboardPage() {
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
 
-  const [myCanvases, setMyCanvases] = useState<CanvasResponseDTO[]>([]);
+  const [myCanvases, setMyCanvases] = useState<CanvasListItemDTO[]>([]);
   const [canvasListLoading, setCanvasListLoading] = useState(true);
   const [canvasListError, setCanvasListError] = useState<string | null>(null);
 
@@ -72,10 +73,14 @@ export function DashboardPage() {
   async function handleJoin(e: FormEvent) {
     e.preventDefault();
     if (!token || !shareToken.trim()) return;
+    const rawToken = parseShareTokenFromInput(shareToken);
+    if (!rawToken) return;
     setError(null);
     setLoading(true);
     try {
-      const canvas = await canvasApi.joinByToken(shareToken.trim(), token);
+      const canvas = await canvasApi.joinByToken(rawToken, token);
+      const refreshed = await canvasApi.listMine(token);
+      setMyCanvases(refreshed);
       navigate(`/canvas/${canvas.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join canvas");
@@ -128,7 +133,7 @@ export function DashboardPage() {
                 <input
                   className="auth-input"
                   type="text"
-                  placeholder="Paste share token"
+                  placeholder="Paste share token or invite link"
                   required
                   value={shareToken}
                   onChange={(e) => setShareToken(e.target.value)}
@@ -145,6 +150,9 @@ export function DashboardPage() {
             aria-labelledby="your-canvases-heading"
           >
             <h2 id="your-canvases-heading">Your canvases</h2>
+            <p className="dashboard-list-intro">
+              Yours and boards you joined — collaborators show the creator’s name.
+            </p>
             <div className="dashboard-canvas-list-scroll">
               {canvasListLoading && (
                 <p className="dashboard-list-hint">Loading your canvases…</p>
@@ -165,6 +173,17 @@ export function DashboardPage() {
                     <li key={c.id}>
                       <Link className="dashboard-canvas-link" to={`/canvas/${c.id}`}>
                         <span className="dashboard-canvas-title">{c.title}</span>
+                        <span
+                          className={
+                            c.is_owner
+                              ? "dashboard-canvas-owner dashboard-canvas-owner--you"
+                              : "dashboard-canvas-owner dashboard-canvas-owner--shared"
+                          }
+                        >
+                          {c.is_owner
+                            ? `You · ${user?.displayName ?? "You"}`
+                            : `From ${c.owner_display_name}`}
+                        </span>
                         <span className="dashboard-canvas-meta">
                           Updated{" "}
                           {new Date(c.updated_at).toLocaleString(undefined, {

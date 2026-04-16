@@ -3,6 +3,9 @@
  * populates the Zustand stores, then renders the editor shell
  * (viewport, toolbar, property panel).
  *
+ * Share link (top bar) calls GET /api/canvas/:id/share and copies `share_url`
+ * to the clipboard for testing invites.
+ *
  * Manual Save (top bar) and periodic auto-save persist elements: PATCH for
  * rows already loaded from the API, POST create for locally new shapes
  * (client UUIDs), then replace local ids with server ids. Keyboard
@@ -116,6 +119,9 @@ export function CanvasPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareLinkError, setShareLinkError] = useState<string | null>(null);
+  const [shareLinkMessage, setShareLinkMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!canvasId || !token) return;
@@ -196,11 +202,39 @@ export function CanvasPage() {
     }
   }, [saveAllElements]);
 
+  const handleShareLink = useCallback(async () => {
+    if (!canvasId || !token) return;
+    setShareLinkError(null);
+    setShareLinkMessage(null);
+    setIsSharing(true);
+    try {
+      const data = await canvasApi.getShareInfo(canvasId, token);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(data.share_url);
+        setShareLinkMessage("Share link copied");
+      } else {
+        setShareLinkMessage(data.share_url);
+      }
+    } catch (err) {
+      setShareLinkError(
+        err instanceof Error ? err.message : "Could not get share link",
+      );
+    } finally {
+      setIsSharing(false);
+    }
+  }, [canvasId, token]);
+
   useEffect(() => {
     if (!saveMessage) return;
     const t = window.setTimeout(() => setSaveMessage(null), 2000);
     return () => window.clearTimeout(t);
   }, [saveMessage]);
+
+  useEffect(() => {
+    if (!shareLinkMessage) return;
+    const t = window.setTimeout(() => setShareLinkMessage(null), 2000);
+    return () => window.clearTimeout(t);
+  }, [shareLinkMessage]);
 
   useAutoSave(handleAutoSave, !loading && !error);
   useKeyboardShortcuts();
@@ -244,6 +278,16 @@ export function CanvasPage() {
           </button>
           <button
             type="button"
+            className="canvas-top-bar-btn"
+            aria-busy={isSharing}
+            disabled={isSharing}
+            title="Copy invite link for this canvas"
+            onClick={() => void handleShareLink()}
+          >
+            {isSharing ? "Sharing…" : "Share link"}
+          </button>
+          <button
+            type="button"
             className="canvas-top-bar-btn canvas-top-bar-btn--danger"
             onClick={() => logout()}
           >
@@ -255,9 +299,19 @@ export function CanvasPage() {
             {saveError}
           </div>
         )}
+        {shareLinkError && (
+          <div role="alert" className="canvas-save-feedback canvas-save-feedback--error">
+            {shareLinkError}
+          </div>
+        )}
         {saveMessage && (
           <div role="status" className="canvas-save-feedback canvas-save-feedback--ok" aria-live="polite">
             {saveMessage}
+          </div>
+        )}
+        {shareLinkMessage && (
+          <div role="status" className="canvas-save-feedback canvas-save-feedback--ok" aria-live="polite">
+            {shareLinkMessage}
           </div>
         )}
       </header>

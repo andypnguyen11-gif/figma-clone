@@ -11,7 +11,7 @@ import { useElementStore } from "../features/elements/elementStore.ts";
 import { useAuthStore } from "../features/auth/authStore.ts";
 
 vi.mock("../services/api/canvasApi.ts", () => ({
-  canvasApi: { get: vi.fn() },
+  canvasApi: { get: vi.fn(), getShareInfo: vi.fn() },
 }));
 vi.mock("../services/api/elementsApi.ts", () => ({
   elementsApi: { list: vi.fn(), update: vi.fn(), create: vi.fn() },
@@ -127,7 +127,7 @@ describe("CanvasPage", () => {
     });
   });
 
-  it("renders home, save, and log out in the top bar", async () => {
+  it("renders home, save, share link, and log out in the top bar", async () => {
     vi.mocked(canvasApi.get).mockResolvedValue({
       id: CANVAS_ID,
       title: "Test",
@@ -143,7 +143,72 @@ describe("CanvasPage", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /^home$/i })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /^save$/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /share link/i }),
+      ).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /log out/i })).toBeInTheDocument();
+    });
+  });
+
+  it("fetches share info and copies share URL when Share link is clicked", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    vi.mocked(canvasApi.get).mockResolvedValue({
+      id: CANVAS_ID,
+      title: "Test",
+      owner_id: "u1",
+      share_token: "abc",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    vi.mocked(elementsApi.list).mockResolvedValue([]);
+    vi.mocked(canvasApi.getShareInfo).mockResolvedValue({
+      canvas_id: CANVAS_ID,
+      share_token: "tok-xyz",
+      share_url: "http://localhost/canvas/join/tok-xyz",
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /share link/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /share link/i }));
+
+    await waitFor(() => {
+      expect(canvasApi.getShareInfo).toHaveBeenCalledWith(CANVAS_ID, "test-token");
+      expect(writeText).toHaveBeenCalledWith("http://localhost/canvas/join/tok-xyz");
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/share link copied/i)).toBeInTheDocument();
+    });
+  });
+
+  it("shows an error when Share link fails", async () => {
+    vi.mocked(canvasApi.get).mockResolvedValue({
+      id: CANVAS_ID,
+      title: "Test",
+      owner_id: "u1",
+      share_token: "abc",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    vi.mocked(elementsApi.list).mockResolvedValue([]);
+    vi.mocked(canvasApi.getShareInfo).mockRejectedValue(new Error("Forbidden"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /share link/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /share link/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(/forbidden/i);
     });
   });
 

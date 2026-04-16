@@ -17,6 +17,12 @@ export interface CanvasResponseDTO {
   updated_at: string;
 }
 
+/** GET /api/canvas — owned + joined canvases with owner labeling. */
+export interface CanvasListItemDTO extends CanvasResponseDTO {
+  owner_display_name: string;
+  is_owner: boolean;
+}
+
 export interface ShareResponseDTO {
   canvas_id: string;
   share_token: string;
@@ -24,8 +30,8 @@ export interface ShareResponseDTO {
 }
 
 export const canvasApi = {
-  /** GET /api/canvas — canvases owned by the current user (newest first on server). */
-  async listMine(token: string): Promise<CanvasResponseDTO[]> {
+  /** GET /api/canvas — canvases you own and canvases you joined (newest first on server). */
+  async listMine(token: string): Promise<CanvasListItemDTO[]> {
     const res = await fetch(BASE, {
       headers: authHeaders(token),
     });
@@ -74,7 +80,7 @@ export const canvasApi = {
   },
 
   async joinByToken(shareToken: string, token: string): Promise<CanvasResponseDTO> {
-    const res = await fetch(`${BASE}/join/${shareToken}`, {
+    const res = await fetch(`${BASE}/join/${encodeURIComponent(shareToken)}`, {
       headers: authHeaders(token),
     });
     if (!res.ok) return handleErrorResponse(res);
