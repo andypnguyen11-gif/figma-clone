@@ -128,6 +128,9 @@ export const Toolbar = React.memo(function Toolbar() {
   const selectedTool = useCanvasStore((s) => s.selectedTool);
   const setSelectedTool = useCanvasStore((s) => s.setSelectedTool);
   const setSelectedElementId = useElementStore((s) => s.setSelectedElementId);
+  const setEditingTextElementId = useElementStore(
+    (s) => s.setEditingTextElementId,
+  );
   const { undo, redo, deleteSelected, canUndo, canRedo, hasSelection } =
     useUndoRedo();
 
@@ -135,8 +138,9 @@ export const Toolbar = React.memo(function Toolbar() {
     (tool: ToolType) => {
       setSelectedTool(tool);
       setSelectedElementId(null);
+      setEditingTextElementId(null);
     },
-    [setSelectedTool, setSelectedElementId],
+    [setSelectedTool, setSelectedElementId, setEditingTextElementId],
   );
 
   return (

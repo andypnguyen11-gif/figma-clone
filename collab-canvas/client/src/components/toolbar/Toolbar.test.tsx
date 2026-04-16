@@ -21,7 +21,11 @@ const makeElement = (overrides: Partial<CanvasElement> = {}): CanvasElement => (
 describe("Toolbar", () => {
   beforeEach(() => {
     useCanvasStore.setState({ selectedTool: "select" });
-    useElementStore.setState({ elements: new Map(), selectedElementId: null });
+    useElementStore.setState({
+      elements: new Map(),
+      selectedElementId: null,
+      editingTextElementId: null,
+    });
     useHistoryStore.setState({ undoStack: [], redoStack: [] });
   });
 
@@ -56,7 +60,11 @@ describe("Toolbar", () => {
   });
 
   it("deselects the current element when switching tools", () => {
-    useElementStore.setState({ selectedElementId: "e1", elements: new Map() });
+    useElementStore.setState({
+      selectedElementId: "e1",
+      elements: new Map(),
+      editingTextElementId: null,
+    });
     render(<Toolbar />);
     fireEvent.click(screen.getByRole("button", { name: /rectangle/i }));
     expect(useElementStore.getState().selectedElementId).toBeNull();
@@ -82,7 +90,11 @@ describe("Toolbar", () => {
     const el = makeElement({ id: "e1" });
     const elements = new Map<string, CanvasElement>();
     elements.set(el.id, el);
-    useElementStore.setState({ elements, selectedElementId: "e1" });
+    useElementStore.setState({
+      elements,
+      selectedElementId: "e1",
+      editingTextElementId: null,
+    });
 
     render(<Toolbar />);
     fireEvent.click(screen.getByRole("button", { name: /delete/i }));
@@ -101,7 +113,11 @@ describe("Toolbar", () => {
     const el = makeElement({ id: "e1" });
     const elements = new Map<string, CanvasElement>();
     elements.set(el.id, el);
-    useElementStore.setState({ elements, selectedElementId: "e1" });
+    useElementStore.setState({
+      elements,
+      selectedElementId: "e1",
+      editingTextElementId: null,
+    });
 
     useHistoryStore.getState().pushUndo([]);
 

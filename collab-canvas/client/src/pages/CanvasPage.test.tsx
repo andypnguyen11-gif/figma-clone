@@ -3,7 +3,7 @@
  * populates stores, and renders the editor shell.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { CanvasPage } from "./CanvasPage.tsx";
 import { useCanvasStore } from "../features/canvas/canvasStore.ts";
@@ -32,6 +32,7 @@ const mockUseCanvasWebSocket = vi.hoisted(() =>
     status: "offline" as const,
     lastError: null,
     hasCollaborators: false,
+    sendJson: vi.fn(),
   })),
 );
 
@@ -50,6 +51,7 @@ beforeEach(() => {
     status: "offline",
     lastError: null,
     hasCollaborators: false,
+    sendJson: vi.fn(),
   }));
   useCanvasStore.getState().clearCanvas();
   useElementStore.getState().setElements([]);
@@ -144,7 +146,7 @@ describe("CanvasPage", () => {
     });
   });
 
-  it("renders home, save, share link, and log out in the top bar", async () => {
+  it("renders home, share link, and log out in the top bar", async () => {
     vi.mocked(canvasApi.get).mockResolvedValue({
       id: CANVAS_ID,
       title: "Test",
@@ -159,7 +161,6 @@ describe("CanvasPage", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /^home$/i })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /^save$/i })).toBeInTheDocument();
       expect(
         screen.getByRole("button", { name: /share link/i }),
       ).toBeInTheDocument();
@@ -229,7 +230,7 @@ describe("CanvasPage", () => {
     });
   });
 
-  it("persists all elements when Save is clicked", async () => {
+  it("persists all elements via debounced save after an element edit", async () => {
     const elementRow = {
       id: "e1",
       canvas_id: CANVAS_ID,
@@ -265,10 +266,16 @@ describe("CanvasPage", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /^save$/i })).toBeInTheDocument();
+      expect(screen.getByTestId("canvas-viewport")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+    act(() => {
+      useElementStore.getState().updateElement("e1", { x: 10, y: 20 });
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 800));
+    });
 
     await waitFor(() => {
       expect(elementsApi.update).toHaveBeenCalledWith(
@@ -289,7 +296,7 @@ describe("CanvasPage", () => {
     expect(elementsApi.create).not.toHaveBeenCalled();
   });
 
-  it("POSTs new local-only elements on save then tracks server ids", async () => {
+  it("POSTs new local-only elements after debounced save then tracks server ids", async () => {
     vi.mocked(canvasApi.get).mockResolvedValue({
       id: CANVAS_ID,
       title: "Test",
@@ -325,7 +332,7 @@ describe("CanvasPage", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /^save$/i })).toBeInTheDocument();
+      expect(screen.getByTestId("canvas-viewport")).toBeInTheDocument();
     });
 
     useElementStore.getState().addElement({
@@ -349,7 +356,9 @@ describe("CanvasPage", () => {
       updatedAt: "",
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 800));
+    });
 
     await waitFor(() => {
       expect(elementsApi.create).toHaveBeenCalledWith(
@@ -370,57 +379,12 @@ describe("CanvasPage", () => {
     expect(useElementStore.getState().getElement("server-e1")).toBeDefined();
   });
 
-  it("shows an error when Save fails", async () => {
-    const elementRow = {
-      id: "e1",
-      canvas_id: CANVAS_ID,
-      element_type: "rectangle",
-      x: 0,
-      y: 0,
-      width: 10,
-      height: 10,
-      fill: "#FFF",
-      stroke: "#000",
-      stroke_width: 1,
-      opacity: 1,
-      rotation: 0,
-      z_index: 0,
-      text_content: null,
-      font_size: null,
-      text_color: null,
-      created_at: "2026-01-01T00:00:00Z",
-      updated_at: "2026-01-01T00:00:00Z",
-    };
-
-    vi.mocked(canvasApi.get).mockResolvedValue({
-      id: CANVAS_ID,
-      title: "Test",
-      owner_id: "u1",
-      share_token: "abc",
-      created_at: "2026-01-01T00:00:00Z",
-      updated_at: "2026-01-01T00:00:00Z",
-    });
-    vi.mocked(elementsApi.list).mockResolvedValue([elementRow]);
-    vi.mocked(elementsApi.update).mockRejectedValue(new Error("Server unavailable"));
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /^save$/i })).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent(/server unavailable/i);
-    });
-  });
-
   it("shows Collaboration connected when another user is in the room", async () => {
     mockUseCanvasWebSocket.mockImplementation(() => ({
       status: "live",
       lastError: null,
       hasCollaborators: true,
+      sendJson: vi.fn(),
     }));
     vi.mocked(canvasApi.get).mockResolvedValue({
       id: CANVAS_ID,
@@ -444,6 +408,7 @@ describe("CanvasPage", () => {
       status: "live",
       lastError: null,
       hasCollaborators: false,
+      sendJson: vi.fn(),
     }));
     vi.mocked(canvasApi.get).mockResolvedValue({
       id: CANVAS_ID,
@@ -458,7 +423,7 @@ describe("CanvasPage", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /^save$/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /share link/i })).toBeInTheDocument();
     });
     expect(screen.queryByText("Collaboration connected")).not.toBeInTheDocument();
   });

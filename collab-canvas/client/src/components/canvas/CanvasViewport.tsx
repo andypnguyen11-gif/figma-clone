@@ -18,6 +18,7 @@ import { Circle, Layer, Line, Rect, RegularPolygon, Stage } from "react-konva";
 import type Konva from "konva";
 import { useElementStore } from "../../features/elements/elementStore.ts";
 import { useCanvasStore } from "../../features/canvas/canvasStore.ts";
+import { useAuthStore } from "../../features/auth/authStore.ts";
 import { useHistoryStore } from "../../features/history/historyStore.ts";
 import { renderShape } from "./KonvaShapes.tsx";
 import { clampScale, screenToCanvas, triangleRadius } from "../../utils/geometry.ts";
@@ -48,7 +49,8 @@ export default function CanvasViewport() {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState<Point>({ x: 0, y: 0 });
   const [drawing, setDrawing] = useState<DrawingState | null>(null);
-  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const editingTextId = useElementStore((s) => s.editingTextElementId);
+  const setEditingTextId = useElementStore((s) => s.setEditingTextElementId);
 
   /**
    * Manual pan tracking. We don't use Stage.draggable because it
@@ -70,6 +72,7 @@ export default function CanvasViewport() {
   const setSelectedTool = useCanvasStore((s) => s.setSelectedTool);
   const pushUndo = useHistoryStore((s) => s.pushUndo);
   const canvasId = useCanvasStore((s) => s.canvas?.id) ?? "local";
+  const currentUserId = useAuthStore((s) => s.user?.id ?? "");
 
   const isDrawingTool = selectedTool !== "select";
 
@@ -246,6 +249,7 @@ export default function CanvasViewport() {
       setSelectedTool,
       pushUndo,
       getAllElements,
+      setEditingTextId,
     ],
   );
 
@@ -258,7 +262,7 @@ export default function CanvasViewport() {
         setEditingTextId(null);
       }
     },
-    [setSelectedElementId, isDrawingTool],
+    [setSelectedElementId, setEditingTextId, isDrawingTool],
   );
 
   /** Select an element when clicked (only in select mode). */
@@ -290,10 +294,18 @@ export default function CanvasViewport() {
         setEditingTextId(id);
       }
     },
-    [setSelectedElementId],
+    [setSelectedElementId, setEditingTextId],
   );
 
   const removeElement = useElementStore((s) => s.removeElement);
+
+  /** While typing, push text into the store so debounced save + realtime sync run before blur. */
+  const handleTextDraftChange = useCallback(
+    (elementId: string, text: string) => {
+      updateElement(elementId, { textContent: text });
+    },
+    [updateElement],
+  );
 
   /** Commit text edit and close the editor; remove if left empty. */
   const handleTextComplete = useCallback(
@@ -407,7 +419,7 @@ export default function CanvasViewport() {
           )}
           {preview}
           <SelectionOverlay shapeRefs={shapeRefs} />
-          <LockOverlay currentUserId="local-user" />
+          <LockOverlay currentUserId={currentUserId} />
         </Layer>
       </Stage>
 
@@ -423,6 +435,7 @@ export default function CanvasViewport() {
           color={editingElement.textColor ?? "#FFFFFF"}
           scale={scale}
           stagePosition={position}
+          onDraftChange={handleTextDraftChange}
           onComplete={handleTextComplete}
         />
       )}

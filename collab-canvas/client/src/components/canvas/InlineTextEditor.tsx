@@ -20,6 +20,13 @@ interface InlineTextEditorProps {
   color: string;
   scale: number;
   stagePosition: Point;
+  /**
+   * Called after typing pauses so the element store can update text for
+   * debounced autosave and realtime peers (without waiting for blur).
+   */
+  onDraftChange?: (elementId: string, text: string) => void;
+  /** Milliseconds to wait after the last keystroke before onDraftChange (default 300). */
+  draftDebounceMs?: number;
   onComplete: (elementId: string, text: string) => void;
 }
 
@@ -34,22 +41,63 @@ export function InlineTextEditor({
   color,
   scale,
   stagePosition,
+  onDraftChange,
+  draftDebounceMs = 300,
   onComplete,
 }: InlineTextEditorProps) {
   const [text, setText] = useState(initialText);
   const ref = useRef<HTMLTextAreaElement>(null);
   const committed = useRef(false);
+  const latestTextRef = useRef(initialText);
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onDraftChangeRef = useRef(onDraftChange);
+  onDraftChangeRef.current = onDraftChange;
 
   useEffect(() => {
     ref.current?.focus();
     ref.current?.select();
   }, []);
 
+  useEffect(
+    () => () => {
+      if (draftTimerRef.current !== null) {
+        clearTimeout(draftTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const scheduleDraft = useCallback(
+    (next: string) => {
+      latestTextRef.current = next;
+      if (!onDraftChange) return;
+      if (draftTimerRef.current !== null) {
+        clearTimeout(draftTimerRef.current);
+      }
+      draftTimerRef.current = setTimeout(() => {
+        draftTimerRef.current = null;
+        onDraftChangeRef.current?.(elementId, latestTextRef.current);
+      }, draftDebounceMs);
+    },
+    [onDraftChange, draftDebounceMs, elementId],
+  );
+
+  const flushDraft = useCallback(() => {
+    if (draftTimerRef.current !== null) {
+      clearTimeout(draftTimerRef.current);
+      draftTimerRef.current = null;
+    }
+    if (onDraftChange) {
+      onDraftChange(elementId, latestTextRef.current);
+    }
+  }, [onDraftChange, elementId]);
+
   const commit = useCallback(() => {
     if (committed.current) return;
     committed.current = true;
-    onComplete(elementId, text);
-  }, [elementId, text, onComplete]);
+    flushDraft();
+    onComplete(elementId, latestTextRef.current);
+  }, [elementId, onComplete, flushDraft]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -90,7 +138,12 @@ export function InlineTextEditor({
       ref={ref}
       role="textbox"
       value={text}
-      onChange={(e) => setText(e.target.value)}
+      onChange={(e) => {
+        const next = e.target.value;
+        setText(next);
+        latestTextRef.current = next;
+        scheduleDraft(next);
+      }}
       onBlur={commit}
       onKeyDown={handleKeyDown}
       style={style}

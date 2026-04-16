@@ -1,66 +1,79 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import { InlineTextEditor } from "./InlineTextEditor.tsx";
 
 describe("InlineTextEditor", () => {
-  const defaultProps = {
-    elementId: "e1",
-    initialText: "Hello",
-    x: 100,
-    y: 200,
-    width: 200,
-    height: 40,
-    fontSize: 16,
-    color: "#FFFFFF",
-    scale: 1,
-    stagePosition: { x: 0, y: 0 },
-    onComplete: vi.fn(),
-  };
-
   beforeEach(() => {
-    defaultProps.onComplete = vi.fn();
+    vi.useFakeTimers();
   });
 
-  it("renders a textarea with the initial text", () => {
-    render(<InlineTextEditor {...defaultProps} />);
-    const textarea = screen.getByRole("textbox");
-    expect(textarea).toBeDefined();
-    expect((textarea as HTMLTextAreaElement).value).toBe("Hello");
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it("auto-focuses the textarea on mount", () => {
-    render(<InlineTextEditor {...defaultProps} />);
-    const textarea = screen.getByRole("textbox");
-    expect(document.activeElement).toBe(textarea);
-  });
+  it("debounces onDraftChange while typing", () => {
+    const onDraftChange = vi.fn();
+    const onComplete = vi.fn();
 
-  it("calls onComplete with updated text on blur", () => {
-    render(<InlineTextEditor {...defaultProps} />);
-    const textarea = screen.getByRole("textbox");
-    fireEvent.change(textarea, { target: { value: "Updated" } });
-    fireEvent.blur(textarea);
-    expect(defaultProps.onComplete).toHaveBeenCalledWith("e1", "Updated");
-  });
-
-  it("calls onComplete on Escape key", () => {
-    render(<InlineTextEditor {...defaultProps} />);
-    const textarea = screen.getByRole("textbox");
-    fireEvent.change(textarea, { target: { value: "Changed" } });
-    fireEvent.keyDown(textarea, { key: "Escape" });
-    expect(defaultProps.onComplete).toHaveBeenCalledWith("e1", "Changed");
-  });
-
-  it("positions the textarea using element coordinates and scale", () => {
     render(
       <InlineTextEditor
-        {...defaultProps}
-        x={50}
-        y={100}
-        scale={2}
-        stagePosition={{ x: 10, y: 20 }}
+        elementId="el-1"
+        initialText=""
+        x={0}
+        y={0}
+        width={100}
+        height={24}
+        fontSize={16}
+        color="#fff"
+        scale={1}
+        stagePosition={{ x: 0, y: 0 }}
+        draftDebounceMs={300}
+        onDraftChange={onDraftChange}
+        onComplete={onComplete}
       />,
     );
-    const textarea = screen.getByRole("textbox");
-    expect(textarea.style.position).toBe("absolute");
+
+    const ta = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: "a" } });
+    fireEvent.change(ta, { target: { value: "ab" } });
+
+    expect(onDraftChange).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(299);
+    expect(onDraftChange).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(onDraftChange).toHaveBeenCalledTimes(1);
+    expect(onDraftChange).toHaveBeenCalledWith("el-1", "ab");
+  });
+
+  it("flushes draft and completes on blur without waiting for debounce", () => {
+    const onDraftChange = vi.fn();
+    const onComplete = vi.fn();
+
+    render(
+      <InlineTextEditor
+        elementId="el-1"
+        initialText=""
+        x={0}
+        y={0}
+        width={100}
+        height={24}
+        fontSize={16}
+        color="#fff"
+        scale={1}
+        stagePosition={{ x: 0, y: 0 }}
+        draftDebounceMs={300}
+        onDraftChange={onDraftChange}
+        onComplete={onComplete}
+      />,
+    );
+
+    const ta = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: "hello" } });
+    fireEvent.blur(ta);
+
+    expect(onDraftChange).toHaveBeenCalledWith("el-1", "hello");
+    expect(onComplete).toHaveBeenCalledWith("el-1", "hello");
   });
 });

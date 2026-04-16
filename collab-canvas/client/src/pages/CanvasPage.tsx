@@ -6,10 +6,11 @@
  * Share link (top bar) calls GET /api/canvas/:id/share and copies `share_url`
  * to the clipboard for testing invites.
  *
- * Manual Save (top bar) and periodic auto-save persist elements: PATCH for
- * rows already loaded from the API, POST create for locally new shapes
- * (client UUIDs), then replace local ids with server ids. Keyboard
- * shortcuts are active on this page.
+ * Debounced save after element edits persists elements: PATCH for rows already
+ * known to the API,
+ * POST create for locally new shapes (client UUIDs), then replace local ids
+ * with server ids. Remote WS element payloads register server ids so debounced
+ * save does not duplicate-create. Keyboard shortcuts are active on this page.
  */
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -18,15 +19,19 @@ import { Toolbar } from "../components/toolbar/Toolbar.tsx";
 import { PropertyPanel } from "../components/properties/PropertyPanel.tsx";
 import { useCanvasStore } from "../features/canvas/canvasStore.ts";
 import { useElementStore } from "../features/elements/elementStore.ts";
+import { mapElementDtoToCanvasElement } from "../features/elements/mapElementDto.ts";
+import { idsRemovedFromCanvas } from "../features/elements/persistHelpers.ts";
+import { processCanvasWsMessage } from "../features/elements/realtimeHandlers.ts";
+import { useLockStore } from "../features/locking/lockStore.ts";
+import { useLockManager } from "../features/locking/useLockManager.ts";
 import { useAuthStore } from "../features/auth/authStore.ts";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts.ts";
-import { useAutoSave } from "../hooks/useAutoSave.ts";
+import { useDebouncedSaveOnElementChange } from "../hooks/useDebouncedSaveOnElementChange.ts";
 import { useCanvasWebSocket } from "../hooks/useCanvasWebSocket.ts";
 import { canvasApi } from "../services/api/canvasApi.ts";
 import { elementsApi } from "../services/api/elementsApi.ts";
 import type { CanvasElement } from "../types/element.ts";
 import type { Canvas } from "../types/canvas.ts";
-import type { ElementResponseDTO } from "../services/api/elementsApi.ts";
 import type { CanvasResponseDTO } from "../services/api/canvasApi.ts";
 
 /** Map a server canvas DTO (snake_case) → client Canvas (camelCase). */
@@ -80,30 +85,6 @@ function elementToPatchPayload(el: CanvasElement): Record<string, unknown> {
   };
 }
 
-/** Map a server element DTO (snake_case) → client CanvasElement (camelCase). */
-function toElement(dto: ElementResponseDTO): CanvasElement {
-  return {
-    id: dto.id,
-    canvasId: dto.canvas_id,
-    elementType: dto.element_type as CanvasElement["elementType"],
-    x: dto.x,
-    y: dto.y,
-    width: dto.width,
-    height: dto.height,
-    fill: dto.fill,
-    stroke: dto.stroke,
-    strokeWidth: dto.stroke_width,
-    opacity: dto.opacity,
-    rotation: dto.rotation,
-    zIndex: dto.z_index,
-    textContent: dto.text_content,
-    fontSize: dto.font_size,
-    textColor: dto.text_color,
-    createdAt: dto.created_at,
-    updatedAt: dto.updated_at,
-  };
-}
-
 export function CanvasPage() {
   const { canvasId } = useParams<{ canvasId: string }>();
   const navigate = useNavigate();
@@ -111,15 +92,13 @@ export function CanvasPage() {
   const logout = useAuthStore((s) => s.logout);
   const setCanvas = useCanvasStore((s) => s.setCanvas);
   const setElements = useElementStore((s) => s.setElements);
+  const selectedElementId = useElementStore((s) => s.selectedElementId);
 
   /** Element ids returned from the API for this canvas (PATCH). Others are POST create first. */
   const persistedElementIdsRef = useRef<Set<string>>(new Set());
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
   const [shareLinkError, setShareLinkError] = useState<string | null>(null);
   const [shareLinkMessage, setShareLinkMessage] = useState<string | null>(null);
@@ -128,6 +107,7 @@ export function CanvasPage() {
     if (!canvasId || !token) return;
 
     let cancelled = false;
+    useLockStore.getState().clearLocks();
 
     async function load() {
       try {
@@ -139,7 +119,7 @@ export function CanvasPage() {
         if (cancelled) return;
 
         setCanvas(toCanvas(canvasDTO));
-        setElements(elementDTOs.map(toElement));
+        setElements(elementDTOs.map(mapElementDtoToCanvasElement));
         persistedElementIdsRef.current = new Set(
           elementDTOs.map((row) => row.id),
         );
@@ -161,6 +141,16 @@ export function CanvasPage() {
     if (!canvasId || !token) return;
     const persisted = persistedElementIdsRef.current;
     const snapshot = useElementStore.getState().getAllElements();
+    const currentIds = new Set(snapshot.map((el) => el.id));
+
+    for (const id of idsRemovedFromCanvas(persisted, currentIds)) {
+      try {
+        await elementsApi.remove(canvasId, id, token);
+        persisted.delete(id);
+      } catch {
+        /* best-effort background persist */
+      }
+    }
 
     for (const el of snapshot) {
       if (persisted.has(el.id)) {
@@ -176,31 +166,17 @@ export function CanvasPage() {
           elementToCreatePayload(el),
           token,
         );
-        const next = toElement(dto);
+        const next = mapElementDtoToCanvasElement(dto);
         useElementStore.getState().replaceElement(el.id, next);
         persisted.add(next.id);
       }
     }
   }, [canvasId, token]);
 
-  const handleAutoSave = useCallback(() => {
+  const persistElementsQuietly = useCallback(() => {
     saveAllElements().catch(() => {
-      /* auto-save is best-effort; errors are silent */
+      /* background persist is best-effort; errors are silent */
     });
-  }, [saveAllElements]);
-
-  const handleManualSave = useCallback(async () => {
-    setSaveError(null);
-    setSaveMessage(null);
-    setIsSaving(true);
-    try {
-      await saveAllElements();
-      setSaveMessage("Saved");
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Save failed");
-    } finally {
-      setIsSaving(false);
-    }
   }, [saveAllElements]);
 
   const handleShareLink = useCallback(async () => {
@@ -226,29 +202,53 @@ export function CanvasPage() {
   }, [canvasId, token]);
 
   useEffect(() => {
-    if (!saveMessage) return;
-    const t = window.setTimeout(() => setSaveMessage(null), 2000);
-    return () => window.clearTimeout(t);
-  }, [saveMessage]);
-
-  useEffect(() => {
     if (!shareLinkMessage) return;
     const t = window.setTimeout(() => setShareLinkMessage(null), 2000);
     return () => window.clearTimeout(t);
   }, [shareLinkMessage]);
 
-  useAutoSave(handleAutoSave, !loading && !error);
+  useDebouncedSaveOnElementChange(persistElementsQuietly, {
+    enabled: Boolean(canvasId && token && !loading && !error),
+  });
   useKeyboardShortcuts();
+
+  const handleWsMessage = useCallback((data: unknown) => {
+    processCanvasWsMessage(data, {
+      onLockDenied: (elementId) => {
+        const sel = useElementStore.getState().selectedElementId;
+        if (sel === elementId) {
+          useElementStore.getState().setSelectedElementId(null);
+        }
+      },
+      onRemoteElementPersisted: (elementId) => {
+        persistedElementIdsRef.current.add(elementId);
+      },
+    });
+  }, []);
 
   const {
     status: wsStatus,
     lastError: wsErrorMessage,
     hasCollaborators,
+    sendJson,
   } = useCanvasWebSocket({
     canvasId: canvasId ?? null,
     token: token ?? null,
     enabled: Boolean(canvasId && token && !loading && !error),
+    onMessage: handleWsMessage,
   });
+
+  useLockManager({
+    enabled: wsStatus === "live" && Boolean(canvasId),
+    sendJson,
+    selectedElementId,
+  });
+
+  useEffect(() => {
+    return () => {
+      useLockStore.getState().clearLocks();
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -279,16 +279,6 @@ export function CanvasPage() {
           </button>
           <button
             type="button"
-            className="canvas-top-bar-btn canvas-top-bar-btn--primary"
-            aria-busy={isSaving}
-            disabled={isSaving}
-            title="Save all shapes to the server"
-            onClick={() => void handleManualSave()}
-          >
-            {isSaving ? "Saving…" : "Save"}
-          </button>
-          <button
-            type="button"
             className="canvas-top-bar-btn"
             aria-busy={isSharing}
             disabled={isSharing}
@@ -305,19 +295,9 @@ export function CanvasPage() {
             Log out
           </button>
         </div>
-        {saveError && (
-          <div role="alert" className="canvas-save-feedback canvas-save-feedback--error">
-            {saveError}
-          </div>
-        )}
         {shareLinkError && (
           <div role="alert" className="canvas-save-feedback canvas-save-feedback--error">
             {shareLinkError}
-          </div>
-        )}
-        {saveMessage && (
-          <div role="status" className="canvas-save-feedback canvas-save-feedback--ok" aria-live="polite">
-            {saveMessage}
           </div>
         )}
         {shareLinkMessage && (
