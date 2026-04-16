@@ -2,7 +2,8 @@
  * App router — defines the route structure for the SPA.
  *
  * Unauthenticated users are redirected to /login. Authenticated
- * users hitting /login or /signup are redirected to /.
+ * users hitting /login or /signup are redirected to /dashboard.
+ * `/` redirects to `/dashboard` so bookmarks to `/` still land on the home screen.
  */
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import type { ReactNode } from "react";
@@ -21,7 +22,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
 
 function GuestOnly({ children }: { children: ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  if (isAuthenticated) return <Navigate to="/" replace />;
+  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -46,8 +47,9 @@ export function AppRouter() {
               </GuestOnly>
             }
           />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route
-            path="/"
+            path="/dashboard"
             element={
               <RequireAuth>
                 <DashboardPage />
@@ -62,7 +64,7 @@ export function AppRouter() {
               </RequireAuth>
             }
           />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

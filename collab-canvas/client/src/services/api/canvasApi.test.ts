@@ -41,6 +41,27 @@ const canvasResponse = {
   updated_at: "2026-01-01T00:00:00Z",
 };
 
+describe("canvasApi.listMine", () => {
+  it("sends GET /api/canvas with auth", async () => {
+    mockFetchSuccess([canvasResponse]);
+
+    const result = await canvasApi.listMine(TOKEN);
+
+    expect(fetch).toHaveBeenCalledWith("/api/canvas", {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(result).toEqual([canvasResponse]);
+  });
+
+  it("returns empty array from JSON", async () => {
+    mockFetchSuccess([]);
+
+    const result = await canvasApi.listMine(TOKEN);
+
+    expect(result).toEqual([]);
+  });
+});
+
 describe("canvasApi.create", () => {
   it("sends POST /api/canvas with title", async () => {
     mockFetchSuccess(canvasResponse, 201);

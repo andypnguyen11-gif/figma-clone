@@ -228,7 +228,7 @@ export function CanvasPage() {
           <button
             type="button"
             className="canvas-top-bar-btn"
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/dashboard")}
           >
             Home
           </button>

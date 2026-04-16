@@ -77,7 +77,7 @@ describe("LoginPage", () => {
 
     await waitFor(() => {
       expect(useAuthStore.getState().isAuthenticated).toBe(true);
-      expect(mockNavigate).toHaveBeenCalledWith("/");
+      expect(mockNavigate).toHaveBeenCalledWith("/dashboard");
     });
   });
 

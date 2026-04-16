@@ -416,18 +416,73 @@ body,
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 24px;
+  justify-content: safe center;
+  gap: 16px;
   padding: 24px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Sits a touch above optical center (still uses safe center on the main axis). */
+.dashboard-content-cluster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 960px;
+  /* ~0.5in above center, plus the smaller optical nudge */
+  transform: translateY(calc(-0.5in - clamp(0.75rem, 2vh, 1.75rem)));
+}
+
+.dashboard-columns {
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(260px, 400px);
+  gap: 24px;
+  justify-content: center;
+  align-items: stretch;
+  width: 100%;
+  max-width: 960px;
+}
+
+@media (max-width: 720px) {
+  .dashboard-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dashboard-column-left {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
 }
 
 .dashboard-card {
-  width: 360px;
+  width: 100%;
+  max-width: 360px;
   padding: 24px;
   border-radius: 12px;
   background: rgba(30, 30, 30, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.dashboard-my-canvases {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  /* Match grid row height (same as stacked New + Join column); list scrolls inside */
+}
+
+.dashboard-canvas-list-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .dashboard-card h2 {
@@ -440,6 +495,51 @@ body,
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.dashboard-list-hint,
+.dashboard-list-empty {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.45);
+  line-height: 1.4;
+}
+
+.dashboard-canvas-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dashboard-canvas-link {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.9);
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.dashboard-canvas-link:hover {
+  background: rgba(13, 153, 255, 0.12);
+  border-color: rgba(13, 153, 255, 0.25);
+}
+
+.dashboard-canvas-title {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.dashboard-canvas-meta {
+  display: block;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 4px;
 }
 
 /* ---------- Canvas Loading / Error ---------- */

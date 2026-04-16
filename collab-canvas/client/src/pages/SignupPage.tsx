@@ -29,7 +29,7 @@ export function SignupPage() {
         { id: res.id, email: res.email, displayName: res.display_name },
         res.access_token,
       );
-      navigate("/");
+      navigate("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Signup failed");
     } finally {

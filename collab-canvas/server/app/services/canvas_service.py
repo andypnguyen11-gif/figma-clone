@@ -13,6 +13,16 @@ from app.models.canvas import Canvas
 from app.schemas.canvas import CanvasCreate, CanvasUpdate
 
 
+def list_canvases_for_owner(owner_id: uuid.UUID, db: Session) -> list[Canvas]:
+    """Return all canvases owned by the user, most recently updated first."""
+    return (
+        db.query(Canvas)
+        .filter(Canvas.owner_id == owner_id)
+        .order_by(Canvas.updated_at.desc())
+        .all()
+    )
+
+
 def create_canvas(data: CanvasCreate, owner_id: uuid.UUID, db: Session) -> Canvas:
     """Create a new canvas owned by the given user."""
     canvas = Canvas(title=data.title, owner_id=owner_id)

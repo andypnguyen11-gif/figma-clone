@@ -46,6 +46,67 @@ class TestCreateCanvas:
         assert response.status_code == 422
 
 
+class TestListMyCanvases:
+    """GET /api/canvas — canvases owned by the current user, newest first."""
+
+    def test_list_my_canvases_empty(self, client):
+        user = client.post(
+            "/api/auth/signup",
+            json={
+                "email": "list-empty@example.com",
+                "password": "pass123456",
+                "display_name": "Lister",
+            },
+        ).json()
+        response = client.get(
+            "/api/canvas",
+            headers={"Authorization": f"Bearer {user['access_token']}"},
+        )
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_list_my_canvases_returns_only_own(self, client):
+        user_a = client.post(
+            "/api/auth/signup",
+            json={
+                "email": "owner-a@example.com",
+                "password": "pass123456",
+                "display_name": "Owner A",
+            },
+        ).json()
+        user_b = client.post(
+            "/api/auth/signup",
+            json={
+                "email": "owner-b@example.com",
+                "password": "pass123456",
+                "display_name": "Owner B",
+            },
+        ).json()
+        c1 = client.post(
+            "/api/canvas",
+            json={"title": "A1"},
+            headers={"Authorization": f"Bearer {user_a['access_token']}"},
+        ).json()
+        client.post(
+            "/api/canvas",
+            json={"title": "B1"},
+            headers={"Authorization": f"Bearer {user_b['access_token']}"},
+        )
+        response = client.get(
+            "/api/canvas",
+            headers={"Authorization": f"Bearer {user_a['access_token']}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["id"] == c1["id"]
+        assert data[0]["title"] == "A1"
+
+    def test_list_my_canvases_unauthenticated(self, client):
+        response = client.get("/api/canvas")
+        assert response.status_code == 401
+
+
 class TestGetCanvas:
     def _create_canvas(self, client) -> tuple[dict, dict]:
         user = client.post(

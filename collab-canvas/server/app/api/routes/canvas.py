@@ -18,6 +18,26 @@ from app.services import canvas_service
 router = APIRouter(prefix="/canvas", tags=["canvas"])
 
 
+@router.get("", response_model=list[CanvasResponse])
+async def list_my_canvases(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[CanvasResponse]:
+    """Return canvases owned by the authenticated user (newest first)."""
+    canvases = canvas_service.list_canvases_for_owner(current_user.id, db)
+    return [
+        CanvasResponse(
+            id=c.id,
+            title=c.title,
+            owner_id=c.owner_id,
+            share_token=c.share_token,
+            created_at=c.created_at,
+            updated_at=c.updated_at,
+        )
+        for c in canvases
+    ]
+
+
 @router.post("", response_model=CanvasResponse, status_code=status.HTTP_201_CREATED)
 async def create_canvas(
     data: CanvasCreate,

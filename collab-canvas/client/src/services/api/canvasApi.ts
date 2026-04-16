@@ -24,6 +24,15 @@ export interface ShareResponseDTO {
 }
 
 export const canvasApi = {
+  /** GET /api/canvas — canvases owned by the current user (newest first on server). */
+  async listMine(token: string): Promise<CanvasResponseDTO[]> {
+    const res = await fetch(BASE, {
+      headers: authHeaders(token),
+    });
+    if (!res.ok) return handleErrorResponse(res);
+    return res.json();
+  },
+
   async create(title: string, token: string): Promise<CanvasResponseDTO> {
     const res = await fetch(BASE, {
       method: "POST",
