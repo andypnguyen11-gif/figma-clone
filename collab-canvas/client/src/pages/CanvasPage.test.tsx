@@ -14,7 +14,7 @@ vi.mock("../services/api/canvasApi.ts", () => ({
   canvasApi: { get: vi.fn() },
 }));
 vi.mock("../services/api/elementsApi.ts", () => ({
-  elementsApi: { list: vi.fn() },
+  elementsApi: { list: vi.fn(), update: vi.fn(), create: vi.fn() },
 }));
 
 vi.mock("../components/canvas/CanvasViewport.tsx", () => ({
@@ -127,7 +127,7 @@ describe("CanvasPage", () => {
     });
   });
 
-  it("renders home and log out in the top bar", async () => {
+  it("renders home, save, and log out in the top bar", async () => {
     vi.mocked(canvasApi.get).mockResolvedValue({
       id: CANVAS_ID,
       title: "Test",
@@ -142,7 +142,195 @@ describe("CanvasPage", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /^home$/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^save$/i })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /log out/i })).toBeInTheDocument();
+    });
+  });
+
+  it("persists all elements when Save is clicked", async () => {
+    const elementRow = {
+      id: "e1",
+      canvas_id: CANVAS_ID,
+      element_type: "rectangle",
+      x: 10,
+      y: 20,
+      width: 100,
+      height: 50,
+      fill: "#FFF",
+      stroke: "#000",
+      stroke_width: 1,
+      opacity: 1,
+      rotation: 0,
+      z_index: 0,
+      text_content: null,
+      font_size: null,
+      text_color: null,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+
+    vi.mocked(canvasApi.get).mockResolvedValue({
+      id: CANVAS_ID,
+      title: "Test",
+      owner_id: "u1",
+      share_token: "abc",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    vi.mocked(elementsApi.list).mockResolvedValue([elementRow]);
+    vi.mocked(elementsApi.update).mockResolvedValue(elementRow);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /^save$/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => {
+      expect(elementsApi.update).toHaveBeenCalledWith(
+        CANVAS_ID,
+        "e1",
+        expect.objectContaining({
+          x: 10,
+          y: 20,
+          width: 100,
+          height: 50,
+          fill: "#FFF",
+          stroke_width: 1,
+          z_index: 0,
+        }),
+        "test-token",
+      );
+    });
+    expect(elementsApi.create).not.toHaveBeenCalled();
+  });
+
+  it("POSTs new local-only elements on save then tracks server ids", async () => {
+    vi.mocked(canvasApi.get).mockResolvedValue({
+      id: CANVAS_ID,
+      title: "Test",
+      owner_id: "u1",
+      share_token: "abc",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    vi.mocked(elementsApi.list).mockResolvedValue([]);
+
+    const serverDto = {
+      id: "server-e1",
+      canvas_id: CANVAS_ID,
+      element_type: "rectangle",
+      x: 12,
+      y: 34,
+      width: 80,
+      height: 40,
+      fill: "#3B82F6",
+      stroke: "#000",
+      stroke_width: 1,
+      opacity: 1,
+      rotation: 0,
+      z_index: 0,
+      text_content: null,
+      font_size: null,
+      text_color: null,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    vi.mocked(elementsApi.create).mockResolvedValue(serverDto);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /^save$/i })).toBeInTheDocument();
+    });
+
+    useElementStore.getState().addElement({
+      id: "client-local-uuid",
+      canvasId: CANVAS_ID,
+      elementType: "rectangle",
+      x: 12,
+      y: 34,
+      width: 80,
+      height: 40,
+      fill: "#3B82F6",
+      stroke: "#000",
+      strokeWidth: 1,
+      opacity: 1,
+      rotation: 0,
+      zIndex: 0,
+      textContent: null,
+      fontSize: null,
+      textColor: null,
+      createdAt: "",
+      updatedAt: "",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => {
+      expect(elementsApi.create).toHaveBeenCalledWith(
+        CANVAS_ID,
+        expect.objectContaining({
+          element_type: "rectangle",
+          x: 12,
+          y: 34,
+          width: 80,
+          height: 40,
+        }),
+        "test-token",
+      );
+    });
+
+    expect(elementsApi.update).not.toHaveBeenCalled();
+    expect(useElementStore.getState().getElement("client-local-uuid")).toBeUndefined();
+    expect(useElementStore.getState().getElement("server-e1")).toBeDefined();
+  });
+
+  it("shows an error when Save fails", async () => {
+    const elementRow = {
+      id: "e1",
+      canvas_id: CANVAS_ID,
+      element_type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      fill: "#FFF",
+      stroke: "#000",
+      stroke_width: 1,
+      opacity: 1,
+      rotation: 0,
+      z_index: 0,
+      text_content: null,
+      font_size: null,
+      text_color: null,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+
+    vi.mocked(canvasApi.get).mockResolvedValue({
+      id: CANVAS_ID,
+      title: "Test",
+      owner_id: "u1",
+      share_token: "abc",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    vi.mocked(elementsApi.list).mockResolvedValue([elementRow]);
+    vi.mocked(elementsApi.update).mockRejectedValue(new Error("Server unavailable"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /^save$/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(/server unavailable/i);
     });
   });
 

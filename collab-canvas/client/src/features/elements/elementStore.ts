@@ -16,6 +16,8 @@ interface ElementState {
   addElement: (element: CanvasElement) => void;
   updateElement: (id: string, changes: ElementUpdatePayload) => void;
   removeElement: (id: string) => void;
+  /** After POST create: remove local client id, insert server row, preserve selection if it was the old id. */
+  replaceElement: (oldId: string, next: CanvasElement) => void;
   setSelectedElementId: (id: string | null) => void;
   getElement: (id: string) => CanvasElement | undefined;
   getAllElements: () => CanvasElement[];
@@ -56,6 +58,16 @@ export const useElementStore = create<ElementState>((set, get) => ({
       const selectedElementId =
         state.selectedElementId === id ? null : state.selectedElementId;
       return { elements: next, selectedElementId };
+    }),
+
+  replaceElement: (oldId, next) =>
+    set((state) => {
+      const nextMap = new Map(state.elements);
+      nextMap.delete(oldId);
+      nextMap.set(next.id, next);
+      const selectedElementId =
+        state.selectedElementId === oldId ? next.id : state.selectedElementId;
+      return { elements: nextMap, selectedElementId };
     }),
 
   setSelectedElementId: (id) => set({ selectedElementId: id }),

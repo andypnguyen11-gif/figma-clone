@@ -79,4 +79,16 @@ describe("elementStore", () => {
     useElementStore.getState().removeElement("e2");
     expect(useElementStore.getState().selectedElementId).toBe("e1");
   });
+
+  it("replaceElement swaps a local id for the server element and keeps selection", () => {
+    const local = makeElement({ id: "local-temp" });
+    const server = makeElement({ id: "server-id", x: 5 });
+    useElementStore.getState().addElement(local);
+    useElementStore.getState().setSelectedElementId("local-temp");
+    useElementStore.getState().replaceElement("local-temp", server);
+
+    expect(useElementStore.getState().getElement("local-temp")).toBeUndefined();
+    expect(useElementStore.getState().getElement("server-id")?.x).toBe(5);
+    expect(useElementStore.getState().selectedElementId).toBe("server-id");
+  });
 });

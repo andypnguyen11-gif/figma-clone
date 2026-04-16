@@ -3,9 +3,12 @@
  * populates the Zustand stores, then renders the editor shell
  * (viewport, toolbar, property panel).
  *
- * Also activates the auto-save hook and keyboard shortcuts.
+ * Manual Save (top bar) and periodic auto-save persist elements: PATCH for
+ * rows already loaded from the API, POST create for locally new shapes
+ * (client UUIDs), then replace local ids with server ids. Keyboard
+ * shortcuts are active on this page.
  */
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import CanvasViewport from "../components/canvas/CanvasViewport.tsx";
 import { Toolbar } from "../components/toolbar/Toolbar.tsx";
@@ -31,6 +34,45 @@ function toCanvas(dto: CanvasResponseDTO): Canvas {
     shareToken: dto.share_token,
     createdAt: dto.created_at,
     updatedAt: dto.updated_at,
+  };
+}
+
+/** Build POST body for creating an element (snake_case keys for the API). */
+function elementToCreatePayload(el: CanvasElement): Record<string, unknown> {
+  return {
+    element_type: el.elementType,
+    x: el.x,
+    y: el.y,
+    width: el.width,
+    height: el.height,
+    fill: el.fill,
+    stroke: el.stroke,
+    stroke_width: el.strokeWidth,
+    opacity: el.opacity,
+    rotation: el.rotation,
+    z_index: el.zIndex,
+    text_content: el.textContent,
+    font_size: el.fontSize,
+    text_color: el.textColor,
+  };
+}
+
+/** Build PATCH body for an element (snake_case keys for the API). */
+function elementToPatchPayload(el: CanvasElement): Record<string, unknown> {
+  return {
+    x: el.x,
+    y: el.y,
+    width: el.width,
+    height: el.height,
+    fill: el.fill,
+    stroke: el.stroke,
+    stroke_width: el.strokeWidth,
+    opacity: el.opacity,
+    rotation: el.rotation,
+    z_index: el.zIndex,
+    text_content: el.textContent,
+    font_size: el.fontSize,
+    text_color: el.textColor,
   };
 }
 
@@ -66,8 +108,14 @@ export function CanvasPage() {
   const setCanvas = useCanvasStore((s) => s.setCanvas);
   const setElements = useElementStore((s) => s.setElements);
 
+  /** Element ids returned from the API for this canvas (PATCH). Others are POST create first. */
+  const persistedElementIdsRef = useRef<Set<string>>(new Set());
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!canvasId || !token) return;
@@ -85,6 +133,9 @@ export function CanvasPage() {
 
         setCanvas(toCanvas(canvasDTO));
         setElements(elementDTOs.map(toElement));
+        persistedElementIdsRef.current = new Set(
+          elementDTOs.map((row) => row.id),
+        );
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : "Failed to load canvas");
@@ -99,36 +150,57 @@ export function CanvasPage() {
     };
   }, [canvasId, token, setCanvas, setElements]);
 
-  const handleAutoSave = useCallback(() => {
+  const saveAllElements = useCallback(async (): Promise<void> => {
     if (!canvasId || !token) return;
-    const elements = useElementStore.getState().getAllElements();
-    for (const el of elements) {
-      elementsApi
-        .update(
+    const persisted = persistedElementIdsRef.current;
+    const snapshot = useElementStore.getState().getAllElements();
+
+    for (const el of snapshot) {
+      if (persisted.has(el.id)) {
+        await elementsApi.update(
           canvasId,
           el.id,
-          {
-            x: el.x,
-            y: el.y,
-            width: el.width,
-            height: el.height,
-            fill: el.fill,
-            stroke: el.stroke,
-            stroke_width: el.strokeWidth,
-            opacity: el.opacity,
-            rotation: el.rotation,
-            z_index: el.zIndex,
-            text_content: el.textContent,
-            font_size: el.fontSize,
-            text_color: el.textColor,
-          },
+          elementToPatchPayload(el),
           token,
-        )
-        .catch(() => {
-          /* auto-save is best-effort; errors are silent */
-        });
+        );
+      } else {
+        const dto = await elementsApi.create(
+          canvasId,
+          elementToCreatePayload(el),
+          token,
+        );
+        const next = toElement(dto);
+        useElementStore.getState().replaceElement(el.id, next);
+        persisted.add(next.id);
+      }
     }
   }, [canvasId, token]);
+
+  const handleAutoSave = useCallback(() => {
+    saveAllElements().catch(() => {
+      /* auto-save is best-effort; errors are silent */
+    });
+  }, [saveAllElements]);
+
+  const handleManualSave = useCallback(async () => {
+    setSaveError(null);
+    setSaveMessage(null);
+    setIsSaving(true);
+    try {
+      await saveAllElements();
+      setSaveMessage("Saved");
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setIsSaving(false);
+    }
+  }, [saveAllElements]);
+
+  useEffect(() => {
+    if (!saveMessage) return;
+    const t = window.setTimeout(() => setSaveMessage(null), 2000);
+    return () => window.clearTimeout(t);
+  }, [saveMessage]);
 
   useAutoSave(handleAutoSave, !loading && !error);
   useKeyboardShortcuts();
@@ -152,20 +224,42 @@ export function CanvasPage() {
   return (
     <>
       <header className="canvas-top-bar">
-        <button
-          type="button"
-          className="canvas-top-bar-btn"
-          onClick={() => navigate("/")}
-        >
-          Home
-        </button>
-        <button
-          type="button"
-          className="canvas-top-bar-btn canvas-top-bar-btn--danger"
-          onClick={() => logout()}
-        >
-          Log out
-        </button>
+        <div className="canvas-top-bar-row">
+          <button
+            type="button"
+            className="canvas-top-bar-btn"
+            onClick={() => navigate("/")}
+          >
+            Home
+          </button>
+          <button
+            type="button"
+            className="canvas-top-bar-btn canvas-top-bar-btn--primary"
+            aria-busy={isSaving}
+            disabled={isSaving}
+            title="Save all shapes to the server"
+            onClick={() => void handleManualSave()}
+          >
+            {isSaving ? "Saving…" : "Save"}
+          </button>
+          <button
+            type="button"
+            className="canvas-top-bar-btn canvas-top-bar-btn--danger"
+            onClick={() => logout()}
+          >
+            Log out
+          </button>
+        </div>
+        {saveError && (
+          <div role="alert" className="canvas-save-feedback canvas-save-feedback--error">
+            {saveError}
+          </div>
+        )}
+        {saveMessage && (
+          <div role="status" className="canvas-save-feedback canvas-save-feedback--ok" aria-live="polite">
+            {saveMessage}
+          </div>
+        )}
       </header>
       <CanvasViewport />
       <Toolbar />
