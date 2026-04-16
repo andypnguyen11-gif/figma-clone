@@ -26,6 +26,19 @@ class CanvasResponse(BaseModel):
     updated_at: datetime
 
 
+class CanvasListItemResponse(BaseModel):
+    """Canvas row for GET /api/canvas — owned and joined canvases with owner label."""
+
+    id: uuid.UUID
+    title: str
+    owner_id: uuid.UUID
+    owner_display_name: str
+    is_owner: bool
+    share_token: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class ShareResponse(BaseModel):
     """Returned when requesting a canvas's shareable link."""
 

@@ -101,6 +101,8 @@ class TestListMyCanvases:
         assert len(data) == 1
         assert data[0]["id"] == c1["id"]
         assert data[0]["title"] == "A1"
+        assert data[0]["owner_display_name"] == "Owner A"
+        assert data[0]["is_owner"] is True
 
     def test_list_my_canvases_unauthenticated(self, client):
         response = client.get("/api/canvas")

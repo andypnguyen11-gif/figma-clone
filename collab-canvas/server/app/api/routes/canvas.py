@@ -12,29 +12,36 @@ from sqlalchemy.orm import Session
 from app.core.security import get_current_user
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.canvas import CanvasCreate, CanvasResponse, CanvasUpdate
+from app.schemas.canvas import (
+    CanvasCreate,
+    CanvasListItemResponse,
+    CanvasResponse,
+    CanvasUpdate,
+)
 from app.services import canvas_service
 
 router = APIRouter(prefix="/canvas", tags=["canvas"])
 
 
-@router.get("", response_model=list[CanvasResponse])
+@router.get("", response_model=list[CanvasListItemResponse])
 async def list_my_canvases(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> list[CanvasResponse]:
-    """Return canvases owned by the authenticated user (newest first)."""
-    canvases = canvas_service.list_canvases_for_owner(current_user.id, db)
+) -> list[CanvasListItemResponse]:
+    """Return canvases owned by the user and canvases they joined (newest first)."""
+    rows = canvas_service.list_dashboard_canvases(current_user.id, db)
     return [
-        CanvasResponse(
-            id=c.id,
-            title=c.title,
-            owner_id=c.owner_id,
-            share_token=c.share_token,
-            created_at=c.created_at,
-            updated_at=c.updated_at,
+        CanvasListItemResponse(
+            id=row.canvas.id,
+            title=row.canvas.title,
+            owner_id=row.canvas.owner_id,
+            owner_display_name=row.owner_display_name,
+            is_owner=row.is_owner,
+            share_token=row.canvas.share_token,
+            created_at=row.canvas.created_at,
+            updated_at=row.canvas.updated_at,
         )
-        for c in canvases
+        for row in rows
     ]
 
 

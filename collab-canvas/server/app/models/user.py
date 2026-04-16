@@ -28,6 +28,12 @@ class User(Base):
     canvases: Mapped[list["Canvas"]] = relationship(
         "Canvas", back_populates="owner", lazy="selectin"
     )
+    canvas_memberships: Mapped[list["CanvasMembership"]] = relationship(
+        "CanvasMembership",
+        back_populates="user",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"<User {self.email}>"

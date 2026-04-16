@@ -93,6 +93,33 @@ class TestJoinCanvas:
         assert data["id"] == canvas["id"]
         assert data["title"] == "Joinable Canvas"
 
+    def test_join_canvas_adds_canvas_to_joiners_dashboard_list(self, client):
+        owner, canvas = self._create_canvas(client)
+        joiner = client.post(
+            "/api/auth/signup",
+            json={
+                "email": "joiner-list@example.com",
+                "password": "pass123456",
+                "display_name": "Joiner List",
+            },
+        ).json()
+
+        client.get(
+            f"/api/canvas/join/{canvas['share_token']}",
+            headers={"Authorization": f"Bearer {joiner['access_token']}"},
+        )
+
+        response = client.get(
+            "/api/canvas",
+            headers={"Authorization": f"Bearer {joiner['access_token']}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["id"] == canvas["id"]
+        assert data[0]["is_owner"] is False
+        assert data[0]["owner_display_name"] == "Join Owner"
+
     def test_join_canvas_invalid_token(self, client):
         joiner = client.post(
             "/api/auth/signup",

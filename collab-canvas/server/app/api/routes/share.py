@@ -44,6 +44,7 @@ async def join_canvas(
 ) -> CanvasResponse:
     """Look up a canvas by share token — grants the caller full edit access."""
     canvas = canvas_service.get_canvas_by_share_token(share_token, db)
+    canvas_service.record_canvas_join(current_user.id, canvas, db)
     return CanvasResponse(
         id=canvas.id,
         title=canvas.title,

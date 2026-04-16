@@ -4,13 +4,25 @@ Canvas service — handles canvas CRUD and share-token lookups.
 All database access for canvases flows through here. Route handlers
 call these functions and never touch the ORM directly.
 """
+from dataclasses import dataclass
 import uuid
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.canvas import Canvas
+from app.models.canvas_membership import CanvasMembership
+from app.models.user import User
 from app.schemas.canvas import CanvasCreate, CanvasUpdate
+
+
+@dataclass(frozen=True)
+class CanvasListRow:
+    """One dashboard row: canvas plus owner display name and ownership flag."""
+
+    canvas: Canvas
+    owner_display_name: str
+    is_owner: bool
 
 
 def list_canvases_for_owner(owner_id: uuid.UUID, db: Session) -> list[Canvas]:
@@ -21,6 +33,56 @@ def list_canvases_for_owner(owner_id: uuid.UUID, db: Session) -> list[Canvas]:
         .order_by(Canvas.updated_at.desc())
         .all()
     )
+
+
+def list_dashboard_canvases(user_id: uuid.UUID, db: Session) -> list[CanvasListRow]:
+    """Return canvases the user owns plus canvases they joined via share link.
+
+    Sorted by ``updated_at`` descending. Each row includes the canvas owner's
+    ``display_name`` and whether the current user is the owner.
+    """
+    owned_rows = (
+        db.query(Canvas, User.display_name)
+        .join(User, Canvas.owner_id == User.id)
+        .filter(Canvas.owner_id == user_id)
+        .all()
+    )
+    joined_rows = (
+        db.query(Canvas, User.display_name)
+        .join(CanvasMembership, CanvasMembership.canvas_id == Canvas.id)
+        .join(User, Canvas.owner_id == User.id)
+        .filter(CanvasMembership.user_id == user_id)
+        .filter(Canvas.owner_id != user_id)
+        .all()
+    )
+    rows: list[CanvasListRow] = [
+        CanvasListRow(canvas=c, owner_display_name=str(owner_name), is_owner=True)
+        for c, owner_name in owned_rows
+    ]
+    rows.extend(
+        CanvasListRow(canvas=c, owner_display_name=str(owner_name), is_owner=False)
+        for c, owner_name in joined_rows
+    )
+    rows.sort(key=lambda r: r.canvas.updated_at, reverse=True)
+    return rows
+
+
+def record_canvas_join(user_id: uuid.UUID, canvas: Canvas, db: Session) -> None:
+    """Persist that ``user_id`` joined ``canvas`` via share link (not the owner)."""
+    if canvas.owner_id == user_id:
+        return
+    exists = (
+        db.query(CanvasMembership)
+        .filter(
+            CanvasMembership.user_id == user_id,
+            CanvasMembership.canvas_id == canvas.id,
+        )
+        .first()
+    )
+    if exists:
+        return
+    db.add(CanvasMembership(user_id=user_id, canvas_id=canvas.id))
+    db.commit()
 
 
 def create_canvas(data: CanvasCreate, owner_id: uuid.UUID, db: Session) -> Canvas:

@@ -18,6 +18,7 @@ from app.db.base import Base
 from app.models.user import User  # noqa: F401
 from app.models.canvas import Canvas  # noqa: F401
 from app.models.element import Element  # noqa: F401
+from app.models.canvas_membership import CanvasMembership  # noqa: F401
 
 config = context.config
 

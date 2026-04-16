@@ -29,6 +29,11 @@ class Canvas(Base):
     )
 
     owner: Mapped["User"] = relationship("User", back_populates="canvases")
+    memberships: Mapped[list["CanvasMembership"]] = relationship(
+        "CanvasMembership",
+        back_populates="canvas",
+        cascade="all, delete-orphan",
+    )
     elements: Mapped[list["Element"]] = relationship(
         "Element",
         back_populates="canvas",
