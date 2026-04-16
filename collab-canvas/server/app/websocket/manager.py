@@ -38,5 +38,15 @@ class ConnectionManager:
         """Snapshot of sockets in a room (for PR-14 broadcasts)."""
         return list(self._by_canvas.get(canvas_id, ()))
 
+    async def broadcast_json(
+        self, canvas_id: uuid.UUID, payload: dict[str, object]
+    ) -> None:
+        """Send JSON to every socket in the room; ignores broken connections."""
+        for ws in self.iter_room(canvas_id):
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                continue
+
 
 connection_manager = ConnectionManager()

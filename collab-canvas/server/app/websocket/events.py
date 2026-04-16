@@ -7,3 +7,7 @@ added in PR-14. Keep inbound/outbound event strings centralized here.
 
 
 EVENT_CONNECTED = "connected"
+
+# Broadcast to all sockets in a canvas room after connect/disconnect so clients
+# can show collaboration UI only when peer_count > 1.
+EVENT_ROOM_PEERS = "room:peers"

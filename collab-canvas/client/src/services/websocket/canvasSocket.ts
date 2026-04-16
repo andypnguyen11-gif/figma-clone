@@ -1,8 +1,9 @@
 /**
  * Authenticated WebSocket client for canvas collaboration (`/api/canvas/:id/ws`).
  *
- * Mirrors the FastAPI handshake: ``GET ...?token=<JWT>``; first frame is JSON
- * ``{ "event": "connected", "canvas_id": "<uuid>" }`` (see `app.websocket.events`).
+ * Mirrors the FastAPI handshake: ``GET ...?token=<JWT>``; first frames are JSON:
+ * ``{ "event": "connected", "canvas_id": "<uuid>" }``, then
+ * ``{ "event": "room:peers", "canvas_id": "<uuid>", "peer_count": <n> }`` (updated on every join/leave).
  */
 
 export function buildCanvasWebSocketUrl(

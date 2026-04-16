@@ -20,6 +20,22 @@ export interface UseCanvasWebSocketOptions {
 interface UseCanvasWebSocketResult {
   status: CanvasWsStatus;
   lastError: string | null;
+  /** True when the server reports at least two sockets in this canvas room (you + someone else). */
+  hasCollaborators: boolean;
+}
+
+function isRoomPeersPayload(data: unknown): data is {
+  event: "room:peers";
+  peer_count: number;
+} {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "event" in data &&
+    (data as { event: string }).event === "room:peers" &&
+    "peer_count" in data &&
+    typeof (data as { peer_count: unknown }).peer_count === "number"
+  );
 }
 
 export function useCanvasWebSocket(
@@ -27,17 +43,22 @@ export function useCanvasWebSocket(
 ): UseCanvasWebSocketResult {
   const [status, setStatus] = useState<CanvasWsStatus>("offline");
   const [lastError, setLastError] = useState<string | null>(null);
+  const [peerCount, setPeerCount] = useState<number | null>(null);
   const onMessageRef = useRef(options.onMessage);
   onMessageRef.current = options.onMessage;
+
+  const hasCollaborators = peerCount !== null && peerCount >= 2;
 
   useEffect(() => {
     if (!options.enabled || !options.canvasId || !options.token) {
       setStatus("offline");
+      setPeerCount(null);
       return;
     }
 
     setStatus("connecting");
     setLastError(null);
+    setPeerCount(null);
 
     const handle = connectCanvasSocket({
       canvasId: options.canvasId,
@@ -52,13 +73,18 @@ export function useCanvasWebSocket(
         ) {
           setStatus("live");
         }
+        if (isRoomPeersPayload(data)) {
+          setPeerCount(data.peer_count);
+        }
       },
       onError: (err) => {
         setLastError(err.message);
         setStatus("error");
+        setPeerCount(null);
       },
       onClose: () => {
         setStatus("offline");
+        setPeerCount(null);
       },
     });
 
@@ -67,5 +93,5 @@ export function useCanvasWebSocket(
     };
   }, [options.enabled, options.canvasId, options.token]);
 
-  return { status, lastError };
+  return { status, lastError, hasCollaborators };
 }

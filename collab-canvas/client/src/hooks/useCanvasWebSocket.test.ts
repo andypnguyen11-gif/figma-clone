@@ -54,6 +54,58 @@ describe("useCanvasWebSocket", () => {
     });
   });
 
+  it("hasCollaborators is false until room:peers reports at least two sockets", async () => {
+    const { result } = renderHook(() =>
+      useCanvasWebSocket({
+        canvasId: "c1",
+        token: "tok",
+        enabled: true,
+      }),
+    );
+    const opts = connectCanvasSocket.mock.calls[0][0];
+    (opts.onMessage as (m: unknown) => void)({ event: "connected" });
+    (opts.onMessage as (m: unknown) => void)({
+      event: "room:peers",
+      canvas_id: "c1",
+      peer_count: 1,
+    });
+    await waitFor(() => {
+      expect(result.current.hasCollaborators).toBe(false);
+    });
+    (opts.onMessage as (m: unknown) => void)({
+      event: "room:peers",
+      canvas_id: "c1",
+      peer_count: 2,
+    });
+    await waitFor(() => {
+      expect(result.current.hasCollaborators).toBe(true);
+    });
+  });
+
+  it("clears hasCollaborators when the socket closes", async () => {
+    const { result } = renderHook(() =>
+      useCanvasWebSocket({
+        canvasId: "c1",
+        token: "tok",
+        enabled: true,
+      }),
+    );
+    const opts = connectCanvasSocket.mock.calls[0][0];
+    (opts.onMessage as (m: unknown) => void)({ event: "connected" });
+    (opts.onMessage as (m: unknown) => void)({
+      event: "room:peers",
+      peer_count: 2,
+    });
+    await waitFor(() => {
+      expect(result.current.hasCollaborators).toBe(true);
+    });
+    expect(opts.onClose).toBeDefined();
+    (opts.onClose as () => void)();
+    await waitFor(() => {
+      expect(result.current.hasCollaborators).toBe(false);
+    });
+  });
+
   it("disconnects on unmount", () => {
     const { unmount } = renderHook(() =>
       useCanvasWebSocket({

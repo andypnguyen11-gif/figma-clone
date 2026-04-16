@@ -240,7 +240,11 @@ export function CanvasPage() {
   useAutoSave(handleAutoSave, !loading && !error);
   useKeyboardShortcuts();
 
-  const { status: wsStatus, lastError: wsErrorMessage } = useCanvasWebSocket({
+  const {
+    status: wsStatus,
+    lastError: wsErrorMessage,
+    hasCollaborators,
+  } = useCanvasWebSocket({
     canvasId: canvasId ?? null,
     token: token ?? null,
     enabled: Boolean(canvasId && token && !loading && !error),
@@ -321,7 +325,7 @@ export function CanvasPage() {
             {shareLinkMessage}
           </div>
         )}
-        {wsStatus === "live" && (
+        {wsStatus === "live" && hasCollaborators && (
           <div role="status" className="canvas-save-feedback canvas-save-feedback--ok" aria-live="polite">
             Collaboration connected
           </div>

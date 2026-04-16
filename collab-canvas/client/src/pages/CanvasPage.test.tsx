@@ -27,8 +27,16 @@ vi.mock("../components/properties/PropertyPanel.tsx", () => ({
   PropertyPanel: () => <div data-testid="property-panel" />,
 }));
 
+const mockUseCanvasWebSocket = vi.hoisted(() =>
+  vi.fn(() => ({
+    status: "offline" as const,
+    lastError: null,
+    hasCollaborators: false,
+  })),
+);
+
 vi.mock("../hooks/useCanvasWebSocket.ts", () => ({
-  useCanvasWebSocket: () => ({ status: "offline" as const, lastError: null }),
+  useCanvasWebSocket: () => mockUseCanvasWebSocket(),
 }));
 
 import { canvasApi } from "../services/api/canvasApi.ts";
@@ -38,6 +46,11 @@ const CANVAS_ID = "c1";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockUseCanvasWebSocket.mockImplementation(() => ({
+    status: "offline",
+    lastError: null,
+    hasCollaborators: false,
+  }));
   useCanvasStore.getState().clearCanvas();
   useElementStore.getState().setElements([]);
   useAuthStore.getState().setAuth(
@@ -401,6 +414,53 @@ describe("CanvasPage", () => {
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent(/server unavailable/i);
     });
+  });
+
+  it("shows Collaboration connected when another user is in the room", async () => {
+    mockUseCanvasWebSocket.mockImplementation(() => ({
+      status: "live",
+      lastError: null,
+      hasCollaborators: true,
+    }));
+    vi.mocked(canvasApi.get).mockResolvedValue({
+      id: CANVAS_ID,
+      title: "Test",
+      owner_id: "u1",
+      share_token: "abc",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    vi.mocked(elementsApi.list).mockResolvedValue([]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Collaboration connected")).toBeInTheDocument();
+    });
+  });
+
+  it("hides Collaboration connected when live but no other peers", async () => {
+    mockUseCanvasWebSocket.mockImplementation(() => ({
+      status: "live",
+      lastError: null,
+      hasCollaborators: false,
+    }));
+    vi.mocked(canvasApi.get).mockResolvedValue({
+      id: CANVAS_ID,
+      title: "Test",
+      owner_id: "u1",
+      share_token: "abc",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    vi.mocked(elementsApi.list).mockResolvedValue([]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /^save$/i })).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Collaboration connected")).not.toBeInTheDocument();
   });
 
   it("clears auth when Log out is clicked", async () => {

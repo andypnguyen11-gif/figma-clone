@@ -31,7 +31,7 @@ class TestCanvasWebSocketAuth:
             headers={"Authorization": f"Bearer {token}"},
         ).json()
 
-    def test_connect_with_valid_jwt_sends_connected_event(self, client):
+    def test_connect_with_valid_jwt_sends_connected_then_room_peers(self, client):
         user = self._signup(client)
         canvas = self._create_canvas(client, user["access_token"])
         path = (
@@ -42,6 +42,10 @@ class TestCanvasWebSocketAuth:
             msg = ws.receive_json()
             assert msg["event"] == "connected"
             assert msg["canvas_id"] == canvas["id"]
+            peers = ws.receive_json()
+            assert peers["event"] == "room:peers"
+            assert peers["canvas_id"] == canvas["id"]
+            assert peers["peer_count"] == 1
 
     def test_connect_without_token_closes_before_messages(self, client):
         user = self._signup(client)
@@ -103,10 +107,26 @@ class TestConnectionManager:
         path_b = f"/api/canvas/{cid}/ws?token={b['access_token']}"
 
         with client.websocket_connect(path_a) as ws_a:
-            ws_a.receive_json()
+            assert ws_a.receive_json()["event"] == "connected"
+            assert ws_a.receive_json()["event"] == "room:peers"
             assert connection_manager.connection_count(cid) == 1
             with client.websocket_connect(path_b) as ws_b:
-                ws_b.receive_json()
+                assert ws_a.receive_json() == {
+                    "event": "room:peers",
+                    "canvas_id": canvas["id"],
+                    "peer_count": 2,
+                }
+                assert ws_b.receive_json()["event"] == "connected"
+                assert ws_b.receive_json() == {
+                    "event": "room:peers",
+                    "canvas_id": canvas["id"],
+                    "peer_count": 2,
+                }
                 assert connection_manager.connection_count(cid) == 2
+            assert ws_a.receive_json() == {
+                "event": "room:peers",
+                "canvas_id": canvas["id"],
+                "peer_count": 1,
+            }
             assert connection_manager.connection_count(cid) == 1
         assert connection_manager.connection_count(cid) == 0

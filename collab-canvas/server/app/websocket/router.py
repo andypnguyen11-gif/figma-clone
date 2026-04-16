@@ -15,10 +15,20 @@ from starlette.websockets import WebSocketDisconnect
 from app.db.session import get_db
 from app.services.canvas_service import get_canvas
 from app.websocket import ws_auth
-from app.websocket.events import EVENT_CONNECTED
+from app.websocket.events import EVENT_CONNECTED, EVENT_ROOM_PEERS
 from app.websocket.manager import connection_manager
 
 router = APIRouter(prefix="/canvas", tags=["websocket"])
+
+
+async def _broadcast_room_peer_count(canvas_id: uuid.UUID) -> None:
+    """Notify everyone in the room (possibly empty) after join or leave."""
+    payload = {
+        "event": EVENT_ROOM_PEERS,
+        "canvas_id": str(canvas_id),
+        "peer_count": connection_manager.connection_count(canvas_id),
+    }
+    await connection_manager.broadcast_json(canvas_id, payload)
 
 
 @router.websocket("/{canvas_id}/ws")
@@ -49,9 +59,11 @@ async def canvas_collaboration_socket(
         await websocket.send_json(
             {"event": EVENT_CONNECTED, "canvas_id": str(canvas_id)}
         )
+        await _broadcast_room_peer_count(canvas_id)
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
         pass
     finally:
         connection_manager.unregister(canvas_id, websocket)
+        await _broadcast_room_peer_count(canvas_id)
