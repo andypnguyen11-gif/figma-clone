@@ -27,6 +27,10 @@ vi.mock("../components/properties/PropertyPanel.tsx", () => ({
   PropertyPanel: () => <div data-testid="property-panel" />,
 }));
 
+vi.mock("../hooks/useCanvasWebSocket.ts", () => ({
+  useCanvasWebSocket: () => ({ status: "offline" as const, lastError: null }),
+}));
+
 import { canvasApi } from "../services/api/canvasApi.ts";
 import { elementsApi } from "../services/api/elementsApi.ts";
 

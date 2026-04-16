@@ -21,6 +21,7 @@ import { useElementStore } from "../features/elements/elementStore.ts";
 import { useAuthStore } from "../features/auth/authStore.ts";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts.ts";
 import { useAutoSave } from "../hooks/useAutoSave.ts";
+import { useCanvasWebSocket } from "../hooks/useCanvasWebSocket.ts";
 import { canvasApi } from "../services/api/canvasApi.ts";
 import { elementsApi } from "../services/api/elementsApi.ts";
 import type { CanvasElement } from "../types/element.ts";
@@ -239,6 +240,12 @@ export function CanvasPage() {
   useAutoSave(handleAutoSave, !loading && !error);
   useKeyboardShortcuts();
 
+  const { status: wsStatus, lastError: wsErrorMessage } = useCanvasWebSocket({
+    canvasId: canvasId ?? null,
+    token: token ?? null,
+    enabled: Boolean(canvasId && token && !loading && !error),
+  });
+
   if (loading) {
     return (
       <div className="canvas-loading">
@@ -312,6 +319,16 @@ export function CanvasPage() {
         {shareLinkMessage && (
           <div role="status" className="canvas-save-feedback canvas-save-feedback--ok" aria-live="polite">
             {shareLinkMessage}
+          </div>
+        )}
+        {wsStatus === "live" && (
+          <div role="status" className="canvas-save-feedback canvas-save-feedback--ok" aria-live="polite">
+            Collaboration connected
+          </div>
+        )}
+        {wsStatus === "error" && wsErrorMessage && (
+          <div role="alert" className="canvas-save-feedback canvas-save-feedback--error">
+            Real-time connection: {wsErrorMessage}
           </div>
         )}
       </header>
