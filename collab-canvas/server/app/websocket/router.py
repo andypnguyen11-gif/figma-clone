@@ -6,9 +6,11 @@ validated before ``accept()``; invalid or missing tokens result in a
 close frame (code 1008) without upgrading the connection.
 
 After the initial ``connected`` / ``room:peers`` frames, clients may send
-JSON with ``event`` set to ``lock:acquire``, ``lock:release``, or
+JSON with ``event`` set to ``cursor:move`` (``x``, ``y`` canvas coordinates),
+``lock:acquire``, ``lock:release``, or
 ``lock:heartbeat`` (``element_id`` UUID). Element CRUD continues to use REST;
 the server broadcasts resulting ``element:*`` events to the room.
+Presence is stored in Redis per user with TTL; disconnect emits ``user:left``.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from app.models.element import Element
 from app.redis.client import get_redis
 from app.services.canvas_service import get_canvas
 from app.services import lock_service as lock_svc
+from app.services import presence_service as presence_svc
 from app.websocket import ws_auth
 from app.websocket.events import (
     EVENT_LOCK_ACQUIRE,
@@ -32,6 +35,7 @@ from app.websocket.events import (
     EVENT_LOCK_HEARTBEAT,
     EVENT_LOCK_RELEASE,
     EVENT_CONNECTED,
+    EVENT_CURSOR_MOVE,
     EVENT_ROOM_PEERS,
 )
 from app.websocket.manager import connection_manager
@@ -98,8 +102,25 @@ async def canvas_collaboration_socket(
                 continue
 
             event = msg.get("event")
+            if not isinstance(event, str):
+                continue
+
+            if event == EVENT_CURSOR_MOVE:
+                rx = msg.get("x")
+                ry = msg.get("y")
+                if isinstance(rx, (int, float)) and isinstance(ry, (int, float)):
+                    payload = presence_svc.handle_cursor_move(
+                        redis_client,
+                        canvas_id,
+                        user,
+                        float(rx),
+                        float(ry),
+                    )
+                    await connection_manager.broadcast_json(canvas_id, payload)
+                continue
+
             element_raw = msg.get("element_id")
-            if not isinstance(event, str) or not isinstance(element_raw, str):
+            if not isinstance(element_raw, str):
                 continue
             try:
                 element_id = uuid.UUID(element_raw)
@@ -145,6 +166,11 @@ async def canvas_collaboration_socket(
     finally:
         pairs = lock_svc.release_all_tracked_for_user(redis_client, user.id)
         connection_manager.unregister(canvas_id, websocket)
+        presence_svc.clear_on_disconnect(redis_client, canvas_id, user.id)
+        await connection_manager.broadcast_json(
+            canvas_id,
+            presence_svc.user_left_payload(canvas_id, user.id),
+        )
         for c_id, e_id in pairs:
             await connection_manager.broadcast_json(
                 c_id,

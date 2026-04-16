@@ -1,1 +1,1 @@
-"""Redis helpers for distributed locks and (later) presence."""
+"""Redis helpers for distributed locks and cursor presence."""

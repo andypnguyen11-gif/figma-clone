@@ -20,3 +20,7 @@ EVENT_LOCK_ACQUIRE = "lock:acquire"
 EVENT_LOCK_RELEASE = "lock:release"
 EVENT_LOCK_DENIED = "lock:denied"
 EVENT_LOCK_HEARTBEAT = "lock:heartbeat"
+
+# Cursor presence (PR-15): client sends coordinates; server stores in Redis + broadcasts.
+EVENT_CURSOR_MOVE = "cursor:move"
+EVENT_USER_LEFT = "user:left"
