@@ -12,6 +12,21 @@ vi.mock("react-konva", () => ({
   Rect: (props: Record<string, unknown>) => (
     <div data-testid="lock-rect" data-stroke={props.stroke as string} />
   ),
+  Circle: (props: Record<string, unknown>) => (
+    <div
+      data-testid="lock-circle"
+      data-radius={String(props.radius)}
+      data-stroke={props.stroke as string}
+    />
+  ),
+  RegularPolygon: (props: Record<string, unknown>) => (
+    <div
+      data-testid="lock-triangle"
+      data-sides={String(props.sides)}
+      data-radius={String(props.radius)}
+      data-stroke={props.stroke as string}
+    />
+  ),
   Text: (props: Record<string, unknown>) => (
     <div data-testid="lock-label">{props.text as string}</div>
   ),
@@ -42,7 +57,11 @@ const makeElement = (overrides: Partial<CanvasElement> = {}): CanvasElement => (
 describe("LockOverlay", () => {
   beforeEach(() => {
     useLockStore.setState({ locks: new Map() });
-    useElementStore.setState({ elements: new Map(), selectedElementId: null });
+    useElementStore.setState({
+      elements: new Map(),
+      selectedElementId: null,
+      editingTextElementId: null,
+    });
   });
 
   it("renders nothing when no locks are active", () => {
@@ -74,6 +93,51 @@ describe("LockOverlay", () => {
     render(<LockOverlay currentUserId="me" />);
     const rect = screen.getByTestId("lock-rect");
     expect(rect.getAttribute("data-stroke")).toBe("#FF0000");
+  });
+
+  it("uses a circle outline for circle elements (same geometry as CircleShape)", () => {
+    useElementStore.getState().addElement(
+      makeElement({
+        id: "c1",
+        elementType: "circle",
+        width: 80,
+        height: 80,
+      }),
+    );
+    useLockStore.getState().setLock("c1", {
+      userId: "other-user",
+      userName: "Millie",
+      color: "#00CED1",
+    });
+
+    render(<LockOverlay currentUserId="me" />);
+    const circle = screen.getByTestId("lock-circle");
+    expect(circle.getAttribute("data-radius")).toBe("40");
+    expect(screen.queryByTestId("lock-rect")).toBeNull();
+    expect(circle.getAttribute("data-stroke")).toBe("#00CED1");
+  });
+
+  it("uses a triangle outline for triangle elements (same geometry as TriangleShape)", () => {
+    useElementStore.getState().addElement(
+      makeElement({
+        id: "t1",
+        elementType: "triangle",
+        width: 120,
+        height: 120,
+      }),
+    );
+    useLockStore.getState().setLock("t1", {
+      userId: "other-user",
+      userName: "Millie",
+      color: "#10B981",
+    });
+
+    render(<LockOverlay currentUserId="me" />);
+    const tri = screen.getByTestId("lock-triangle");
+    expect(tri.getAttribute("data-sides")).toBe("3");
+    expect(tri.getAttribute("data-radius")).toBe("60");
+    expect(screen.queryByTestId("lock-rect")).toBeNull();
+    expect(tri.getAttribute("data-stroke")).toBe("#10B981");
   });
 
   it("does not render overlay for elements locked by the current user", () => {
