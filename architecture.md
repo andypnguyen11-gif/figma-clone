@@ -28,8 +28,8 @@ subgraph CLIENT["Client (React + TypeScript + Konva)"]
     subgraph CLIENT_SERVICES["Services"]
         APIClient[REST API Client]
         WSClient[WebSocket Client — JWT]
-        AutoSave[AutoSave Timer]
-        Reconnect[Reconnect Handler]
+        DebouncedPersist[Debounced REST persist — element edits]
+        Reconnect[Reconnect + REST resync + WS lock:snapshot]
         LockClient[Lock Manager]
     end
 
@@ -67,7 +67,7 @@ subgraph CLIENT["Client (React + TypeScript + Konva)"]
     Zustand --> WSClient
     Zustand --> LockClient
 
-    AutoSave --> APIClient
+    DebouncedPersist --> APIClient
     Reconnect --> WSClient
     Reconnect --> APIClient
 

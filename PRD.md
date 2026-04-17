@@ -34,7 +34,7 @@ Real-Time Collaboration
 * As a designer, I want to see which elements other users are currently editing (locked) so that I don't attempt conflicting edits
 * As a designer, I want locked elements to be visually indicated (outline + owner name) so that collaboration is transparent
 Persistence
-* As a designer, I want my work to auto-save periodically so that I don't lose progress
+* As a designer, I want my edits persisted to the server after changes settle (debounced) so that I don't lose progress
 
 👥 Secondary User: Collaborator
 Joining & Context
@@ -102,10 +102,10 @@ Editing & Collaboration
 * Broadcast element changes to all connected clients
 * Conflict handling: element-level locking (only the lock holder can mutate an element)
 * Server rejects mutations from non-lock-holders (guard on both REST and WebSocket paths)
-* Reconnection with canvas state refresh on disconnect/reconnect (includes current lock state)
+* Reconnection with canvas state refresh on disconnect/reconnect; current lock state is delivered via WebSocket (`lock:snapshot` after connect), not a separate REST lock endpoint
 💾 Persistence
 * Store canvas and elements in PostgreSQL
-* Auto-save every 10 minutes while the user is active on the page
+* Debounced persistence to the API after local element changes settle (avoids spamming the server on every drag frame; not a timed interval)
 * Page reload restores latest saved state
 
 3. Tech Stack (FINAL)
@@ -246,9 +246,10 @@ WS /canvas/:id/ws?token=<JWT>
 * Use granular element updates
 
 🟡 WebSocket Reconnection
-* Detect disconnects and auto-reconnect
-* On reconnect, fetch latest canvas state via REST to re-sync
-* Re-authenticate on reconnect
+* Detect disconnects and auto-reconnect with backoff
+* On reconnect, re-authenticate (JWT on the new WebSocket) and fetch latest canvas + elements via REST to re-sync local stores
+* After connect, the server sends `lock:snapshot` (Redis-backed locks for the canvas) so the client’s lock overlay matches reality without a dedicated locks REST API
+* Optionally clear stale lock/presence overlays while the socket is down; the server releases a disconnected user’s locks in Redis
 
 7. Suggested Build Order
 1. Canvas rendering with Konva (local only)
@@ -261,7 +262,7 @@ WS /canvas/:id/ws?token=<JWT>
 8. Zustand store implementation
 9. Backend API (auth + CRUD)
 10. PostgreSQL integration
-11. Frontend ↔ API connection (including auto-save timer)
+11. Frontend ↔ API connection (including debounced persist of element changes)
 12. WebSocket server (authenticated)
 13. Redis integration
 14. Real-time sync

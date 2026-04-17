@@ -1,4 +1,8 @@
-# React + TypeScript + Vite
+# Collab Canvas — client
+
+React + TypeScript + Vite app for the Collab Canvas editor. Product requirements and persistence behavior (debounced API persist after edits, WebSocket reconnection + `lock:snapshot`) live in the repo root [`PRD.md`](../../PRD.md).
+
+---
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 

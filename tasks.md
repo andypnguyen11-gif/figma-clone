@@ -62,8 +62,8 @@ collab-canvas/
 │  │
 │  │  ├─ hooks/
 │  │  │  ├─ useKeyboardShortcuts.ts
-│  │  │  ├─ useAutoSave.ts             ← 10-minute interval timer
-│  │  │  ├─ useReconnect.ts            ← WebSocket reconnection + state refresh
+│  │  │  ├─ useDebouncedSaveOnElementChange.ts ← debounced REST persist after edits settle
+│  │  │  ├─ useReconnect.ts            ← callbacks: refetch REST after WS reconnect; clear overlays on disconnect
 │  │
 │  │  ├─ services/
 │  │  │  ├─ api/
@@ -83,7 +83,7 @@ collab-canvas/
 │  │  ├─ types/
 │  │  │  ├─ canvas.ts
 │  │  │  ├─ element.ts                  ← includes fill, stroke, strokeWidth, opacity, rotation, zIndex
-│  │  │  ├─ websocket.ts                ← includes lock:acquire, lock:release, lock:denied, lock:heartbeat events
+│  │  │  ├─ websocket.ts                ← includes lock:acquire, lock:release, lock:denied, lock:heartbeat, lock:snapshot
 │  │
 │  │  ├─ utils/
 │  │  │  ├─ geometry.ts
@@ -310,12 +310,12 @@ Tests
 npm run test -- shortcuts
 
 
-PR-12 — API Integration + Auto-Save
+PR-12 — API Integration + Debounced Persist
 Tasks
 * Fetch canvas + elements on page load
 * Connect Zustand stores to REST API
-* Auto-save timer: persist canvas state every 10 minutes while user is active on the page
-* useAutoSave.ts hook (setInterval, resets on page visibility change)
+* Debounced persistence: after local element edits settle, PATCH existing rows and POST new shapes (no fixed-interval timer)
+* useDebouncedSaveOnElementChange.ts hook (subscribe to element store, debounce ~650ms default)
 Tests
 
 npm run test -- api-integration
@@ -365,12 +365,12 @@ Tasks
 PR-16 — Reconnection + State Refresh
 Tasks
 * Detect WebSocket disconnect
-* Auto-reconnect with exponential backoff
-* On reconnect: re-authenticate, fetch latest canvas state via REST API
-* On reconnect: fetch current lock state and update lockStore (so locked elements are displayed correctly)
-* Merge fetched state into local store
-* Release any locally held locks before disconnect cleanup
-* useReconnect.ts hook
+* Auto-reconnect with exponential backoff (JWT on each new socket)
+* On reconnect: fetch latest canvas + elements via REST API and merge into Zustand
+* Lock state: server sends `lock:snapshot` over WebSocket immediately after connect; client applies it to lockStore (no separate REST locks endpoint)
+* While socket is down: clear stale lock and presence overlays locally; server `finally` releases that user’s Redis locks and broadcasts `lock:release`
+* useReconnect.ts — `onReconnect` runs REST refresh; `onConnectionLost` clears lock/presence stores
+* useCanvasWebSocket.ts — wires backoff, `connected` → refresh, and connection-lost cleanup
 
 🧪 Testing Rules (IMPORTANT)
 * Tests must pass before moving forward
