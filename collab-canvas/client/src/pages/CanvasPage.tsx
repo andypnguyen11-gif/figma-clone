@@ -30,6 +30,7 @@ import { useAuthStore } from "../features/auth/authStore.ts";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts.ts";
 import { useDebouncedSaveOnElementChange } from "../hooks/useDebouncedSaveOnElementChange.ts";
 import { useCanvasWebSocket } from "../hooks/useCanvasWebSocket.ts";
+import { useReconnect } from "../hooks/useReconnect.ts";
 import { useThrottledCursorBroadcast } from "../hooks/useThrottledCursorBroadcast.ts";
 import { canvasApi } from "../services/api/canvasApi.ts";
 import { elementsApi } from "../services/api/elementsApi.ts";
@@ -232,6 +233,27 @@ export function CanvasPage() {
     processPresenceWsMessage(data, { currentUserId: userId });
   }, [userId]);
 
+  const refreshAfterWsReconnect = useCallback(async (): Promise<void> => {
+    if (!canvasId || !token) return;
+    try {
+      const [canvasDTO, elementDTOs] = await Promise.all([
+        canvasApi.get(canvasId, token),
+        elementsApi.list(canvasId, token),
+      ]);
+      setCanvas(toCanvas(canvasDTO));
+      setElements(elementDTOs.map(mapElementDtoToCanvasElement));
+      persistedElementIdsRef.current = new Set(
+        elementDTOs.map((row) => row.id),
+      );
+    } catch {
+      /* best-effort background resync */
+    }
+  }, [canvasId, token, setCanvas, setElements]);
+
+  const { onReconnect, onConnectionLost } = useReconnect({
+    refreshState: refreshAfterWsReconnect,
+  });
+
   const {
     status: wsStatus,
     lastError: wsErrorMessage,
@@ -242,6 +264,8 @@ export function CanvasPage() {
     token: token ?? null,
     enabled: Boolean(canvasId && token && !loading && !error),
     onMessage: handleWsMessage,
+    onReconnect,
+    onConnectionLost,
   });
 
   const broadcastCursorMove = useThrottledCursorBroadcast(

@@ -7,18 +7,23 @@ import uuid
 import pytest
 
 from app.redis import locks as redis_locks
+from app.services import lock_service as lock_svc
 from app.websocket.events import (
     EVENT_CONNECTED,
     EVENT_LOCK_ACQUIRE,
     EVENT_LOCK_DENIED,
+    EVENT_LOCK_SNAPSHOT,
     EVENT_ROOM_PEERS,
 )
 
 
 def _handshake(ws) -> None:
-    """Consume ``connected`` then ``room:peers`` frames."""
+    """Consume ``connected``, ``room:peers``, then ``lock:snapshot``."""
     assert ws.receive_json()["event"] == EVENT_CONNECTED
     assert ws.receive_json()["event"] == EVENT_ROOM_PEERS
+    snap = ws.receive_json()
+    assert snap["event"] == EVENT_LOCK_SNAPSHOT
+    assert isinstance(snap.get("locks"), list)
 
 
 class TestRedisPrimitives:
@@ -45,6 +50,70 @@ class TestRedisPrimitives:
         redis_locks.try_acquire(redis_client, canvas_id, element_id, user_a)
         assert not redis_locks.release(redis_client, canvas_id, element_id, user_b)
         assert redis_locks.release(redis_client, canvas_id, element_id, user_a)
+
+    def test_iter_element_locks_for_canvas_collects_pairs(self, redis_client) -> None:
+        canvas_id = uuid.uuid4()
+        e1 = uuid.uuid4()
+        e2 = uuid.uuid4()
+        u1 = uuid.uuid4()
+        assert redis_locks.try_acquire(redis_client, canvas_id, e1, u1)
+        assert redis_locks.try_acquire(redis_client, canvas_id, e2, u1)
+        pairs = redis_locks.iter_element_locks_for_canvas(redis_client, canvas_id)
+        found = {(a, b) for a, b in pairs}
+        assert (e1, u1) in found
+        assert (e2, u1) in found
+
+
+class TestLockSnapshotOnConnect:
+    def test_lock_snapshot_reflects_redis_holder(self, client, redis_client) -> None:
+        owner = client.post(
+            "/api/auth/signup",
+            json={
+                "email": "snap-owner@example.com",
+                "password": "pass123456",
+                "display_name": "Snap Owner",
+            },
+        ).json()
+        peer = client.post(
+            "/api/auth/signup",
+            json={
+                "email": "snap-peer@example.com",
+                "password": "pass123456",
+                "display_name": "Snap Peer",
+            },
+        ).json()
+        canvas = client.post(
+            "/api/canvas",
+            json={"title": "Snap"},
+            headers={"Authorization": f"Bearer {owner['access_token']}"},
+        ).json()
+        element = client.post(
+            f"/api/canvas/{canvas['id']}/elements",
+            json={
+                "element_type": "rectangle",
+                "x": 0.0,
+                "y": 0.0,
+                "width": 10.0,
+                "height": 10.0,
+            },
+            headers={"Authorization": f"Bearer {owner['access_token']}"},
+        ).json()
+        cid = uuid.UUID(str(canvas["id"]))
+        eid = uuid.UUID(str(element["id"]))
+        peer_uid = uuid.UUID(str(peer["id"]))
+        lock_svc.grant_lock_for_test(redis_client, cid, eid, peer_uid)
+
+        path = f"/api/canvas/{canvas['id']}/ws?token={owner['access_token']}"
+        with client.websocket_connect(path) as ws:
+            assert ws.receive_json()["event"] == EVENT_CONNECTED
+            assert ws.receive_json()["event"] == EVENT_ROOM_PEERS
+            snap = ws.receive_json()
+            assert snap["event"] == EVENT_LOCK_SNAPSHOT
+            assert len(snap["locks"]) == 1
+            row = snap["locks"][0]
+            assert row["element_id"] == element["id"]
+            assert row["user_id"] == peer["id"]
+            assert row["user_name"] == "Collaborator"
 
 
 class TestWebSocketLockProtocol:

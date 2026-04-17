@@ -74,6 +74,35 @@ describe("processCanvasWsMessage", () => {
     expect(useElementStore.getState().getElement("e-remote")).toBeUndefined();
   });
 
+  it("replaces locks from lock:snapshot", () => {
+    useLockStore.getState().setLock("old", {
+      userId: "u0",
+      userName: "Old",
+      color: "#000",
+    });
+    processCanvasWsMessage(
+      {
+        event: "lock:snapshot",
+        canvas_id: "c1",
+        locks: [
+          {
+            element_id: "e1",
+            user_id: "u1",
+            user_name: "Alice",
+            color: "#abc",
+          },
+        ],
+      },
+      {},
+    );
+    expect(useLockStore.getState().locks.has("old")).toBe(false);
+    expect(useLockStore.getState().locks.get("e1")).toEqual({
+      userId: "u1",
+      userName: "Alice",
+      color: "#abc",
+    });
+  });
+
   it("sets lock on lock:acquire", () => {
     processCanvasWsMessage(
       {

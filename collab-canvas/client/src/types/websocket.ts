@@ -44,6 +44,18 @@ export interface LockDeniedEvent {
   element_id: string;
 }
 
+/** Full lock set for this canvas (sent after ``connected`` / ``room:peers`` on join). */
+export interface LockSnapshotEvent {
+  event: "lock:snapshot";
+  canvas_id: string;
+  locks: Array<{
+    element_id: string;
+    user_id: string;
+    user_name: string;
+    color: string;
+  }>;
+}
+
 export interface LockHeartbeatEvent {
   event: "lock:heartbeat";
   element_id: string;
@@ -93,6 +105,7 @@ export type WebSocketEvent =
   | LockAcquireEvent
   | LockReleaseEvent
   | LockDeniedEvent
+  | LockSnapshotEvent
   | LockHeartbeatEvent
   | CursorMoveBroadcast
   | UserJoinedEvent

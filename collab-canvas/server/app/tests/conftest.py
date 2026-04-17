@@ -20,6 +20,16 @@ from app.redis import client as redis_client_module
 
 
 @pytest.fixture(autouse=True)
+def clear_canvas_websocket_rooms() -> None:
+    """Prevent process-local room state from leaking between WebSocket tests."""
+    from app.websocket.manager import connection_manager
+
+    connection_manager._by_canvas.clear()
+    yield
+    connection_manager._by_canvas.clear()
+
+
+@pytest.fixture(autouse=True)
 def redis_client(monkeypatch: pytest.MonkeyPatch):
     """In-memory Redis per test — patch ``get_redis`` before any route runs."""
     fake = fakeredis.FakeStrictRedis(decode_responses=True)

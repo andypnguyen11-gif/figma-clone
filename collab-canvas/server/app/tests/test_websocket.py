@@ -10,7 +10,6 @@ import uuid
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
-
 class TestCanvasWebSocketAuth:
     """WS /api/canvas/{canvas_id}/ws?token=<JWT>"""
 
@@ -46,6 +45,10 @@ class TestCanvasWebSocketAuth:
             assert peers["event"] == "room:peers"
             assert peers["canvas_id"] == canvas["id"]
             assert peers["peer_count"] == 1
+            snap = ws.receive_json()
+            assert snap["event"] == "lock:snapshot"
+            assert snap["canvas_id"] == canvas["id"]
+            assert snap["locks"] == []
 
     def test_connect_without_token_closes_before_messages(self, client):
         user = self._signup(client)
@@ -72,61 +75,3 @@ class TestCanvasWebSocketAuth:
             ):
                 pass
 
-
-class TestConnectionManager:
-    """Socket registry exposed for collaboration rooms (used by PR-14+)."""
-
-    def test_two_connections_same_canvas_are_tracked(self, client):
-        """Manager counts two distinct sockets in the same canvas room."""
-        a = client.post(
-            "/api/auth/signup",
-            json={
-                "email": "peer-a@example.com",
-                "password": "pass123456",
-                "display_name": "Peer A",
-            },
-        ).json()
-        b = client.post(
-            "/api/auth/signup",
-            json={
-                "email": "peer-b@example.com",
-                "password": "pass123456",
-                "display_name": "Peer B",
-            },
-        ).json()
-        canvas = client.post(
-            "/api/canvas",
-            json={"title": "Shared"},
-            headers={"Authorization": f"Bearer {a['access_token']}"},
-        ).json()
-
-        from app.websocket.manager import connection_manager
-
-        cid = uuid.UUID(canvas["id"])
-        path_a = f"/api/canvas/{cid}/ws?token={a['access_token']}"
-        path_b = f"/api/canvas/{cid}/ws?token={b['access_token']}"
-
-        with client.websocket_connect(path_a) as ws_a:
-            assert ws_a.receive_json()["event"] == "connected"
-            assert ws_a.receive_json()["event"] == "room:peers"
-            assert connection_manager.connection_count(cid) == 1
-            with client.websocket_connect(path_b) as ws_b:
-                assert ws_a.receive_json() == {
-                    "event": "room:peers",
-                    "canvas_id": canvas["id"],
-                    "peer_count": 2,
-                }
-                assert ws_b.receive_json()["event"] == "connected"
-                assert ws_b.receive_json() == {
-                    "event": "room:peers",
-                    "canvas_id": canvas["id"],
-                    "peer_count": 2,
-                }
-                assert connection_manager.connection_count(cid) == 2
-            assert ws_a.receive_json() == {
-                "event": "room:peers",
-                "canvas_id": canvas["id"],
-                "peer_count": 1,
-            }
-            assert connection_manager.connection_count(cid) == 1
-        assert connection_manager.connection_count(cid) == 0

@@ -84,3 +84,36 @@ def get_holder(
         return uuid.UUID(str(raw))
     except (ValueError, TypeError):
         return None
+
+
+def iter_element_locks_for_canvas(
+    redis: Redis,
+    canvas_id: uuid.UUID,
+) -> list[tuple[uuid.UUID, uuid.UUID]]:
+    """Return ``(element_id, holder_user_id)`` pairs for all Redis keys in this canvas.
+
+    Keys follow ``lock:canvas:{canvas_id}:element:{element_id}``. Uses ``KEYS``
+    with a narrow prefix so the set stays small per canvas (acceptable for the
+    expected number of concurrent edits).
+    """
+    pattern = f"lock:canvas:{canvas_id}:element:*"
+    out: list[tuple[uuid.UUID, uuid.UUID]] = []
+    for raw_key in redis.keys(pattern):
+        key = raw_key.decode() if isinstance(raw_key, bytes) else str(raw_key)
+        suffix = ":element:"
+        if suffix not in key:
+            continue
+        element_part = key.split(suffix, 1)[1]
+        try:
+            element_id = uuid.UUID(element_part)
+        except (ValueError, TypeError):
+            continue
+        raw_holder = redis.get(key)
+        if raw_holder is None:
+            continue
+        try:
+            holder_id = uuid.UUID(str(raw_holder))
+        except (ValueError, TypeError):
+            continue
+        out.append((element_id, holder_id))
+    return out

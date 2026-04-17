@@ -5,7 +5,8 @@ Handshake: ``GET /api/canvas/{canvas_id}/ws?token=<JWT>`` — the token is
 validated before ``accept()``; invalid or missing tokens result in a
 close frame (code 1008) without upgrading the connection.
 
-After the initial ``connected`` / ``room:peers`` frames, clients may send
+After ``connected``, ``room:peers``, and ``lock:snapshot`` (Redis lock state
+for this canvas), clients may send
 JSON with ``event`` set to ``cursor:move`` (``x``, ``y`` canvas coordinates),
 ``lock:acquire``, ``lock:release``, or
 ``lock:heartbeat`` (``element_id`` UUID). Element CRUD continues to use REST;
@@ -24,7 +25,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.db.session import get_db
 from app.models.element import Element
-from app.redis.client import get_redis
+from app.redis import client as redis_client
 from app.services.canvas_service import get_canvas
 from app.services import lock_service as lock_svc
 from app.services import presence_service as presence_svc
@@ -85,13 +86,16 @@ async def canvas_collaboration_socket(
         raise
 
     await websocket.accept()
-    redis_client = get_redis()
+    redis_conn = redis_client.get_redis()
     connection_manager.register(canvas_id, websocket)
     try:
         await websocket.send_json(
             {"event": EVENT_CONNECTED, "canvas_id": str(canvas_id)}
         )
         await _broadcast_room_peer_count(canvas_id)
+        await websocket.send_json(
+            lock_svc.build_lock_snapshot_message(redis_conn, canvas_id)
+        )
         while True:
             try:
                 raw = await websocket.receive_text()
@@ -110,7 +114,7 @@ async def canvas_collaboration_socket(
                 ry = msg.get("y")
                 if isinstance(rx, (int, float)) and isinstance(ry, (int, float)):
                     payload = presence_svc.handle_cursor_move(
-                        redis_client,
+                        redis_conn,
                         canvas_id,
                         user,
                         float(rx),
@@ -135,7 +139,7 @@ async def canvas_collaboration_socket(
 
             if event == EVENT_LOCK_ACQUIRE:
                 ok = lock_svc.handle_lock_acquire(
-                    redis_client, canvas_id, element_id, user
+                    redis_conn, canvas_id, element_id, user
                 )
                 if ok:
                     payload = lock_svc.lock_broadcast_payload(
@@ -148,7 +152,7 @@ async def canvas_collaboration_socket(
                     )
             elif event == EVENT_LOCK_RELEASE:
                 removed = lock_svc.handle_lock_release(
-                    redis_client, canvas_id, element_id, user
+                    redis_conn, canvas_id, element_id, user
                 )
                 if removed:
                     await connection_manager.broadcast_json(
@@ -159,14 +163,14 @@ async def canvas_collaboration_socket(
                     )
             elif event == EVENT_LOCK_HEARTBEAT:
                 lock_svc.handle_lock_heartbeat(
-                    redis_client, canvas_id, element_id, user
+                    redis_conn, canvas_id, element_id, user
                 )
     except WebSocketDisconnect:
         pass
     finally:
-        pairs = lock_svc.release_all_tracked_for_user(redis_client, user.id)
+        pairs = lock_svc.release_all_tracked_for_user(redis_conn, user.id)
         connection_manager.unregister(canvas_id, websocket)
-        presence_svc.clear_on_disconnect(redis_client, canvas_id, user.id)
+        presence_svc.clear_on_disconnect(redis_conn, canvas_id, user.id)
         await connection_manager.broadcast_json(
             canvas_id,
             presence_svc.user_left_payload(canvas_id, user.id),

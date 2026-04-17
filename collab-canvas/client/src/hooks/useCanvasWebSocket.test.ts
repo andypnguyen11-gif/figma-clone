@@ -2,7 +2,7 @@
  * Tests for useCanvasWebSocket — lifecycle around connectCanvasSocket.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { useCanvasWebSocket } from "./useCanvasWebSocket.ts";
 
 const connectCanvasSocket = vi.fn();
@@ -21,6 +21,7 @@ describe("useCanvasWebSocket", () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
   });
 
   it("does not connect when disabled", () => {
@@ -116,5 +117,56 @@ describe("useCanvasWebSocket", () => {
     );
     unmount();
     expect(disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("does not call onReconnect on first connected", async () => {
+    const onReconnect = vi.fn();
+    renderHook(() =>
+      useCanvasWebSocket({
+        canvasId: "c1",
+        token: "tok",
+        enabled: true,
+        onReconnect,
+      }),
+    );
+    const opts = connectCanvasSocket.mock.calls[0][0];
+    (opts.onMessage as (m: unknown) => void)({ event: "connected" });
+    await waitFor(() => {
+      expect(onReconnect).not.toHaveBeenCalled();
+    });
+  });
+
+  it("calls onReconnect after close then successful connected", async () => {
+    vi.useFakeTimers();
+    const onReconnect = vi.fn();
+    const onConnectionLost = vi.fn();
+    const { unmount } = renderHook(() =>
+      useCanvasWebSocket({
+        canvasId: "c1",
+        token: "tok",
+        enabled: true,
+        onReconnect,
+        onConnectionLost,
+      }),
+    );
+    const optsFirst = connectCanvasSocket.mock.calls[0][0];
+    await act(async () => {
+      (optsFirst.onMessage as (m: unknown) => void)({ event: "connected" });
+      (optsFirst.onClose as () => void)();
+    });
+    expect(onConnectionLost).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(connectCanvasSocket).toHaveBeenCalledTimes(2);
+
+    const optsSecond = connectCanvasSocket.mock.calls[1][0];
+    await act(async () => {
+      (optsSecond.onMessage as (m: unknown) => void)({ event: "connected" });
+      await Promise.resolve();
+    });
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+    unmount();
   });
 });

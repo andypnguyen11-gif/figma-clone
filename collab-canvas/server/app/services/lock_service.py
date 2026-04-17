@@ -16,7 +16,11 @@ from app.models.user import User
 from app.redis import locks as redis_locks
 from app.services import user_palette
 from app.services.lock_user_tracker import lock_user_tracker
-from app.websocket.events import EVENT_LOCK_ACQUIRE, EVENT_LOCK_RELEASE
+from app.websocket.events import (
+    EVENT_LOCK_ACQUIRE,
+    EVENT_LOCK_RELEASE,
+    EVENT_LOCK_SNAPSHOT,
+)
 
 
 def ensure_element_lock(
@@ -101,6 +105,38 @@ def lock_release_broadcast_payload(
         "event": EVENT_LOCK_RELEASE,
         "canvas_id": str(canvas_id),
         "element_id": str(element_id),
+    }
+
+
+def build_lock_snapshot_message(
+    redis_client: Redis,
+    canvas_id: uuid.UUID,
+) -> dict[str, object]:
+    """Build ``lock:snapshot`` for a joining client — active Redis locks + stable labels.
+
+    Display names are not queried from the DB here: the WebSocket dependency may
+    share a SQLite session with the test client, and nested sockets would block.
+    Live ``lock:acquire`` broadcasts still carry ``User.display_name`` for editors.
+    """
+    pairs = redis_locks.iter_element_locks_for_canvas(redis_client, canvas_id)
+    locks: list[dict[str, str]] = []
+    seen_elements: set[uuid.UUID] = set()
+    for element_id, holder_id in pairs:
+        if element_id in seen_elements:
+            continue
+        seen_elements.add(element_id)
+        locks.append(
+            {
+                "element_id": str(element_id),
+                "user_id": str(holder_id),
+                "user_name": "Collaborator",
+                "color": user_palette.user_color_hex(holder_id),
+            }
+        )
+    return {
+        "event": EVENT_LOCK_SNAPSHOT,
+        "canvas_id": str(canvas_id),
+        "locks": locks,
     }
 
 

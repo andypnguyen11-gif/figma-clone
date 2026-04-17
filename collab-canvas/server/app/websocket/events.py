@@ -20,6 +20,8 @@ EVENT_LOCK_ACQUIRE = "lock:acquire"
 EVENT_LOCK_RELEASE = "lock:release"
 EVENT_LOCK_DENIED = "lock:denied"
 EVENT_LOCK_HEARTBEAT = "lock:heartbeat"
+# Sent to a socket right after join so reconnecting clients can rebuild lock overlays.
+EVENT_LOCK_SNAPSHOT = "lock:snapshot"
 
 # Cursor presence (PR-15): client sends coordinates; server stores in Redis + broadcasts.
 EVENT_CURSOR_MOVE = "cursor:move"

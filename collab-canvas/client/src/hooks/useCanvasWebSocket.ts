@@ -1,8 +1,9 @@
 /**
  * Keeps an authenticated WebSocket open for the active canvas while the page is loaded.
  *
- * Reconnects when `canvasId` or `token` changes; disconnects on unmount. User callbacks
- * are kept in a ref so parent re-renders do not recreate the socket.
+ * On transport failure, reconnects with exponential backoff (1s → 2s → … capped at 30s).
+ * After a successful reconnect, `onReconnect` runs so the app can refetch REST state; while
+ * offline, `onConnectionLost` clears ephemeral collaboration overlays (locks, remote cursors).
  */
 import { useEffect, useRef, useState } from "react";
 import { connectCanvasSocket } from "../services/websocket/canvasSocket.ts";
@@ -15,6 +16,15 @@ export interface UseCanvasWebSocketOptions {
   enabled: boolean;
   /** Receives every JSON payload from the server (including `connected`). */
   onMessage?: (data: unknown) => void;
+  /**
+   * Called after the socket was lost and a new session receives `connected`.
+   * Use to refetch canvas + elements (and merge); lock snapshot follows via WS.
+   */
+  onReconnect?: () => void | Promise<void>;
+  /**
+   * Called when the socket closes unexpectedly (not on intentional unmount-driven close).
+   */
+  onConnectionLost?: () => void;
 }
 
 interface UseCanvasWebSocketResult {
@@ -25,6 +35,9 @@ interface UseCanvasWebSocketResult {
   /** Outbound JSON helper (no-ops until the socket is ready). */
   sendJson: (payload: unknown) => void;
 }
+
+const INITIAL_BACKOFF_MS = 1000;
+const MAX_BACKOFF_MS = 30_000;
 
 function isRoomPeersPayload(data: unknown): data is {
   event: "room:peers";
@@ -48,6 +61,11 @@ export function useCanvasWebSocket(
   const [peerCount, setPeerCount] = useState<number | null>(null);
   const onMessageRef = useRef(options.onMessage);
   onMessageRef.current = options.onMessage;
+  const onReconnectRef = useRef(options.onReconnect);
+  onReconnectRef.current = options.onReconnect;
+  const onConnectionLostRef = useRef(options.onConnectionLost);
+  onConnectionLostRef.current = options.onConnectionLost;
+
   const sendJsonRef = useRef<(payload: unknown) => void>(() => {});
 
   const hasCollaborators = peerCount !== null && peerCount >= 2;
@@ -60,42 +78,95 @@ export function useCanvasWebSocket(
       return;
     }
 
-    setStatus("connecting");
-    setLastError(null);
-    setPeerCount(null);
+    let disposed = false;
+    let intentionalDisconnect = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectPending = false;
+    let nextBackoffMs = INITIAL_BACKOFF_MS;
+    let handle: { disconnect: () => void; sendJson: (p: unknown) => void } | null =
+      null;
 
-    const handle = connectCanvasSocket({
-      canvasId: options.canvasId,
-      token: options.token,
-      onMessage: (data) => {
-        onMessageRef.current?.(data);
-        if (
-          typeof data === "object" &&
-          data !== null &&
-          "event" in data &&
-          (data as { event: string }).event === "connected"
-        ) {
-          setStatus("live");
+    const clearReconnectTimer = () => {
+      if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    };
+
+    const scheduleReconnect = () => {
+      clearReconnectTimer();
+      const delay = nextBackoffMs;
+      nextBackoffMs = Math.min(nextBackoffMs * 2, MAX_BACKOFF_MS);
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        if (!disposed) {
+          connectNow();
         }
-        if (isRoomPeersPayload(data)) {
-          setPeerCount(data.peer_count);
+      }, delay);
+    };
+
+    const handleIncoming = (data: unknown) => {
+      onMessageRef.current?.(data);
+      if (
+        typeof data === "object" &&
+        data !== null &&
+        "event" in data &&
+        (data as { event: string }).event === "connected"
+      ) {
+        setStatus("live");
+        nextBackoffMs = INITIAL_BACKOFF_MS;
+        if (reconnectPending) {
+          reconnectPending = false;
+          void Promise.resolve(onReconnectRef.current?.()).catch(() => {
+            /* refresh is best-effort */
+          });
         }
-      },
-      onError: (err) => {
-        setLastError(err.message);
-        setStatus("error");
-        setPeerCount(null);
-      },
-      onClose: () => {
-        setStatus("offline");
-        setPeerCount(null);
-      },
-    });
-    sendJsonRef.current = handle.sendJson;
+      }
+      if (isRoomPeersPayload(data)) {
+        setPeerCount(data.peer_count);
+      }
+    };
+
+    const connectNow = () => {
+      if (disposed) return;
+      setStatus("connecting");
+      setLastError(null);
+      setPeerCount(null);
+
+      handle = connectCanvasSocket({
+        canvasId: options.canvasId!,
+        token: options.token!,
+        onMessage: handleIncoming,
+        onError: (err) => {
+          setLastError(err.message);
+          setStatus("error");
+          setPeerCount(null);
+        },
+        onClose: () => {
+          sendJsonRef.current = () => {};
+          if (intentionalDisconnect) {
+            return;
+          }
+          setStatus("offline");
+          setPeerCount(null);
+          reconnectPending = true;
+          onConnectionLostRef.current?.();
+          if (!disposed) {
+            scheduleReconnect();
+          }
+        },
+      });
+      sendJsonRef.current = handle.sendJson;
+    };
+
+    connectNow();
 
     return () => {
+      disposed = true;
+      intentionalDisconnect = true;
+      clearReconnectTimer();
       sendJsonRef.current = () => {};
-      handle.disconnect();
+      handle?.disconnect();
     };
   }, [options.enabled, options.canvasId, options.token]);
 

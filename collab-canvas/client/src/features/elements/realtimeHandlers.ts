@@ -82,6 +82,32 @@ export function processCanvasWsMessage(
       }
       break;
     }
+    case "lock:snapshot": {
+      const locksRaw = msg.locks;
+      useLockStore.getState().clearLocks();
+      if (!Array.isArray(locksRaw)) break;
+      for (const row of locksRaw) {
+        if (typeof row !== "object" || row === null) continue;
+        const r = row as Record<string, unknown>;
+        const elementId = r.element_id;
+        const userId = r.user_id;
+        const userName = r.user_name;
+        const color = r.color;
+        if (
+          typeof elementId === "string" &&
+          typeof userId === "string" &&
+          typeof userName === "string" &&
+          typeof color === "string"
+        ) {
+          useLockStore.getState().setLock(elementId, {
+            userId,
+            userName,
+            color,
+          });
+        }
+      }
+      break;
+    }
     case "lock:denied": {
       const elementId = msg.element_id;
       if (typeof elementId === "string") {
